@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-COMPOSE_CLIENT="docker compose -f docker-compose.yml -f docker-compose.client.yml"
+COMPOSE_CLIENT="docker compose -f docker-compose-client.yml"
 
 print_header() {
     clear
@@ -39,31 +39,35 @@ execute_action() {
     case $action in
         "deploy")
             echo -e "${GREEN}Deploying and building containers...${NC}"
-            $compose_cmd up -d --build
+            $compose_cmd up -d --build client
             ;;
         "start")
             echo -e "${GREEN}Starting containers...${NC}"
-            $compose_cmd start
+            $compose_cmd start client
             ;;
         "stop")
             echo -e "${YELLOW}Stopping containers...${NC}"
-            $compose_cmd stop
+            $compose_cmd stop client
             ;;
         "restart")
             echo -e "${GREEN}Restarting containers...${NC}"
-            $compose_cmd restart
+            $compose_cmd restart client
             ;;
         "status")
             echo -e "${GREEN}Container Status:${NC}"
-            $compose_cmd ps
+            $compose_cmd ps client
             ;;
         "logs")
             echo -e "${GREEN}Showing logs (Ctrl+C to exit):${NC}"
-            $compose_cmd logs -f
+            $compose_cmd logs -f client
             ;;
         "down")
             echo -e "${RED}Tearing down containers and networks...${NC}"
-            $compose_cmd down
+            $compose_cmd rm -fsv client
+            ;;
+        "shell")
+            echo -e "${GREEN}Opening shell in client container...${NC}"
+            $compose_cmd exec client /bin/bash || $compose_cmd exec client /bin/sh
             ;;
         *)
             echo -e "${RED}Unknown action '${action}'. Valid actions: deploy, start, stop, restart, status, logs, down.${NC}"
@@ -81,10 +85,11 @@ interactive_mode() {
         echo -e " ${YELLOW}5.${NC} Status"
         echo -e " ${YELLOW}6.${NC} View Logs"
         echo -e " ${RED}7.${NC} Tear Down (Down)"
+        echo -e " ${CYAN}8.${NC} Shell into Container"
         echo -e "${CYAN}----------------------------------------------------${NC}"
         echo -e " ${YELLOW}0.${NC} Exit"
         echo -e "${CYAN}====================================================${NC}"
-        echo -n -e "Select an option [0-7]: "
+        echo -n -e "Select an option [0-8]: "
         read -r choice
 
         case $choice in
@@ -102,12 +107,13 @@ interactive_mode() {
                 fi
                 pause
                 ;;
+            8) execute_action "shell" ;;
             0) 
                 echo -e "${GREEN}Exiting. Goodbye!${NC}"
                 exit 0 
                 ;;
             *) 
-                echo -e "${RED}Invalid option. Please choose a number between 0 and 7.${NC}"
+                echo -e "${RED}Invalid option. Please choose a number between 0 and 8.${NC}"
                 pause
                 ;;
         esac

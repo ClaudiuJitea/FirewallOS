@@ -1,17 +1,10 @@
 services:
-  backend:
-    networks:
-      default: {}
-      lan_test:
-        ipv4_address: 10.0.0.1
-
   client:
     build:
       context: ./client
       dockerfile: Dockerfile
-    container_name: firewall-test-client
-    depends_on:
-      - backend
+    container_name: firewall-client
+
     cap_add:
       - NET_ADMIN
       - NET_RAW

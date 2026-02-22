@@ -5,9 +5,19 @@ FirewallOS is a comprehensive, Docker-based firewall management application that
 ## Project Structure
 
 The project contains three main components:
+
 - `backend`: The API and logic that handles interactions with the system's iptables and DHCP configuration (via dnsmasq).
 - `frontend`: The user interface designed to provide control over the firewall configurations.
-- `client`: A testing client (moved to the root directory for consistency and ease of use) used to simulate network activity and verify functionality within an isolated Docker network.
+- `client`: A testing client used to simulate network activity and verify functionality within an isolated Docker network.
+
+### Compose Files
+
+| File | Purpose |
+|---|---|
+| `docker-compose-firewall.yml` | Defines the **frontend** and **backend** services (main firewall stack) |
+| `docker-compose-client.yml` | Defines the **client** service and the isolated `lan_test` bridge network |
+
+Both stacks are fully **independent** — they can be started and stopped separately.
 
 ## Features
 
@@ -23,14 +33,13 @@ The project contains three main components:
 
 ## Deployment & Management
 
-FirewallOS is completely containerized. Use the provided interactive control panel scripts to orchestrate the environment easily. 
+FirewallOS is completely containerized. Use the provided interactive control panel scripts to orchestrate the environment easily.
 
-### Managing the Main System
-
-We provide beautiful interactive control panels for both Linux/macOS and Windows:
+### Managing the Firewall Stack (Frontend + Backend)
 
 **For Linux/macOS:**
 ```bash
+chmod +x firewall.sh
 ./firewall.sh
 ```
 
@@ -39,18 +48,29 @@ We provide beautiful interactive control panels for both Linux/macOS and Windows
 .\firewall.ps1
 ```
 
-Running these scripts will open an interactive menu to deploy, start, stop, restart, view the status, or check logs of the main configuration (Frontend + Backend). 
+#### Menu Options
 
-Once deployed, the FirewallOS Management UI is accessible on port 80 at `http://localhost`.
+| Option | Action |
+|---|---|
+| 1 | Deploy (build and start containers) |
+| 2 | Start containers |
+| 3 | Stop containers |
+| 4 | Restart containers |
+| 5 | Show status |
+| 6 | View live logs |
+| 7 | Tear down (remove containers) |
+| 8 | Shell into container (choose Frontend or Backend) |
+| 0 | Exit |
 
-### Testing with the Client
+Once deployed, the FirewallOS Management UI is accessible at `http://localhost` (port 80).
 
-The testing client container has been situated in the root directory alongside other main modules. Use the client to verify DHCP bindings and network behavior. 
+---
 
-To spin up the test network and the client container effectively, use the dedicated client control scripts:
+### Managing the Client (Testing Environment)
 
 **For Linux/macOS:**
 ```bash
+chmod +x firewall-client.sh
 ./firewall-client.sh
 ```
 
@@ -59,7 +79,25 @@ To spin up the test network and the client container effectively, use the dedica
 .\firewall-client.ps1
 ```
 
-These scripts provide a similar interactive menu specifically targeting the client testing environment. This ensures the client attaches to the proper bridged subnet while the backend processes its requests according to the current configuration.
+#### Menu Options
+
+| Option | Action |
+|---|---|
+| 1 | Deploy (build and start the client container) |
+| 2 | Start container |
+| 3 | Stop container |
+| 4 | Restart container |
+| 5 | Show status |
+| 6 | View live logs |
+| 7 | Tear down (remove container) |
+| 8 | Shell into the client container |
+| 0 | Exit |
+
+The client connects to the isolated `firewall_lan_test` bridge network (`10.0.0.0/24`). The backend is reachable at `10.0.0.1`.
+
+> **Note:** Start the firewall stack first so the `firewall_lan_test` network exists before deploying the client.
+
+---
 
 ## Usage
 
@@ -86,9 +124,12 @@ Fine-tuning the setup.
 Configure specific actions for incoming, outgoing, or routed packets.
 
 ![Simulation View](img/Screenshot%20From%202026-02-22%2016-45-36.png)
-The simulation pane enables robust verification of rule hierarchies without affecting live networks. Ensure you review the results before pushing configurations.
+The simulation pane enables robust verification of rule hierarchies without affecting live networks.
+
+---
 
 ## Troubleshooting
 
-- **DHCP Issues:** In case of failure to assign IP addresses, verify that the `backend` has been started with `NET_ADMIN` and `NET_RAW` capabilities.
-- **Client Connectivity:** Since the client directory was moved to the root, `docker-compose.client.yml` uses the `./client` context and connects to a bridge network `lan_test`.
+- **DHCP Issues:** Verify that the `backend` container has been started with `NET_ADMIN` and `NET_RAW` capabilities — both are set in `docker-compose-firewall.yml`.
+- **Client Connectivity:** The client uses its own standalone `docker-compose-client.yml`. Make sure the firewall stack is running first so the `firewall_lan_test` network is available.
+- **Shell access not working:** If option 8 fails, the container may not be running. Use option 5 (Status) to verify, then option 2 (Start) or option 1 (Deploy) to bring it up.

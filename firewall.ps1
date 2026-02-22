@@ -33,7 +33,7 @@ function Invoke-Action {
         [string]$Action
     )
 
-    $composeArgs = @("-f", "docker-compose.yml")
+    $composeArgs = @("-f", "docker-compose-firewall.yml")
 
     Write-Host "Action: $Action" -ForegroundColor Blue
     Write-Host "----------------------------------------------------" -ForegroundColor Cyan
@@ -41,35 +41,65 @@ function Invoke-Action {
     switch ($Action) {
         "deploy" {
             Write-Host "Deploying and building containers..." -ForegroundColor Green
-            docker compose @composeArgs up -d --build
+            docker compose @composeArgs up -d --build frontend backend
         }
         "start" {
             Write-Host "Starting containers..." -ForegroundColor Green
-            docker compose @composeArgs start
+            docker compose @composeArgs start frontend backend
         }
         "stop" {
             Write-Host "Stopping containers..." -ForegroundColor Yellow
-            docker compose @composeArgs stop
+            docker compose @composeArgs stop frontend backend
         }
         "restart" {
             Write-Host "Restarting containers..." -ForegroundColor Green
-            docker compose @composeArgs restart
+            docker compose @composeArgs restart frontend backend
         }
         "status" {
             Write-Host "Container Status:" -ForegroundColor Green
-            docker compose @composeArgs ps
+            docker compose @composeArgs ps frontend backend
         }
         "logs" {
             Write-Host "Showing logs (Ctrl+C to exit):" -ForegroundColor Green
-            docker compose @composeArgs logs -f
+            docker compose @composeArgs logs -f frontend backend
         }
         "down" {
             Write-Host "Tearing down containers and networks..." -ForegroundColor Red
-            docker compose @composeArgs down
+            docker compose @composeArgs rm -fsv frontend backend
+        }
+        "shell-frontend" {
+            Write-Host "Opening shell in frontend container..." -ForegroundColor Green
+            docker compose @composeArgs exec frontend /bin/sh
+        }
+        "shell-backend" {
+            Write-Host "Opening shell in backend container..." -ForegroundColor Green
+            docker compose @composeArgs exec backend /bin/bash
+            if ($LASTEXITCODE -ne 0) {
+                docker compose @composeArgs exec backend /bin/sh
+            }
         }
         default {
             Write-Host "Unknown action '$Action'." -ForegroundColor Red
         }
+    }
+}
+
+function Show-ShellMenu {
+    Show-Header
+    Write-Host " Select container to open a shell into:" -ForegroundColor Yellow
+    Write-Host "----------------------------------------------------" -ForegroundColor Cyan
+    Write-Host " 1. Frontend" -ForegroundColor Yellow
+    Write-Host " 2. Backend" -ForegroundColor Yellow
+    Write-Host "----------------------------------------------------" -ForegroundColor Cyan
+    Write-Host " 0. Back" -ForegroundColor Yellow
+    Write-Host "====================================================" -ForegroundColor Cyan
+
+    $shellChoice = Read-Host "Select an option [0-2]"
+    switch ($shellChoice) {
+        "1" { Invoke-Action "shell-frontend" }
+        "2" { Invoke-Action "shell-backend" }
+        "0" { return }
+        default { Write-Host "Invalid option." -ForegroundColor Red; Pause-Script }
     }
 }
 
@@ -83,11 +113,12 @@ function Show-InteractiveMenu {
         Write-Host " 5. Status" -ForegroundColor Yellow
         Write-Host " 6. View Logs" -ForegroundColor Yellow
         Write-Host " 7. Tear Down (Down)" -ForegroundColor Red
+        Write-Host " 8. Shell into Container" -ForegroundColor Cyan
         Write-Host "----------------------------------------------------" -ForegroundColor Cyan
         Write-Host " 0. Exit" -ForegroundColor Yellow
         Write-Host "====================================================" -ForegroundColor Cyan
         
-        $choice = Read-Host "Select an option [0-7]"
+        $choice = Read-Host "Select an option [0-8]"
 
         switch ($choice) {
             "1"  { Invoke-Action "deploy"; Pause-Script }
@@ -103,12 +134,13 @@ function Show-InteractiveMenu {
                 }
                 Pause-Script
             }
+            "8"  { Show-ShellMenu }
             "0" {
                 Write-Host "Exiting. Goodbye!" -ForegroundColor Green
                 exit 0
             }
             default {
-                Write-Host "Invalid option. Please choose a number between 0 and 7." -ForegroundColor Red
+                Write-Host "Invalid option. Please choose a number between 0 and 8." -ForegroundColor Red
                 Pause-Script
             }
         }
