@@ -21,37 +21,45 @@ The project contains three main components:
 - Docker installed on your host machine.
 - Docker Compose installed.
 
-## Deployment
+## Deployment & Management
 
-FirewallOS is completely containerized. Use the deployed scripts and docker-compose configurations to orchestrate the environment. 
+FirewallOS is completely containerized. Use the provided interactive control panel scripts to orchestrate the environment easily. 
 
-### Standard Deployment
+### Managing the Main System
 
-1. Make sure you are in the root directory of the FirewallOS repository.
-2. Run the deployment script to build and bring up the frontend and backend containers in the background:
+We provide beautiful interactive control panels for both Linux/macOS and Windows:
 
+**For Linux/macOS:**
 ```bash
-./deploy.sh
+./firewall.sh
 ```
 
-Alternatively, invoke Docker Compose directly:
-
-```bash
-docker compose up -d --build
+**For Windows (PowerShell):**
+```powershell
+.\firewall.ps1
 ```
+
+Running these scripts will open an interactive menu to deploy, start, stop, restart, view the status, or check logs of the main configuration (Frontend + Backend). 
+
 Once deployed, the FirewallOS Management UI is accessible on port 80 at `http://localhost`.
 
 ### Testing with the Client
 
 The testing client container has been situated in the root directory alongside other main modules. Use the client to verify DHCP bindings and network behavior. 
 
-To spin up the test network and the client container:
+To spin up the test network and the client container effectively, use the dedicated client control scripts:
 
+**For Linux/macOS:**
 ```bash
-docker compose -f docker-compose.client.yml up -d --build
+./firewall-client.sh
 ```
 
-This ensures the client attaches to the proper bridged subnet while the backend processes its requests according to current configuration.
+**For Windows (PowerShell):**
+```powershell
+.\firewall-client.ps1
+```
+
+These scripts provide a similar interactive menu specifically targeting the client testing environment. This ensures the client attaches to the proper bridged subnet while the backend processes its requests according to the current configuration.
 
 ## Usage
 
