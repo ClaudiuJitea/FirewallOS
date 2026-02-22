@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    volumes:
+      - firewall_data:/app/data
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    init: true
+    restart: always
+
+volumes:
+  firewall_data:

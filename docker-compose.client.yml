@@ -1,0 +1,32 @@
+services:
+  backend:
+    networks:
+      default: {}
+      lan_test:
+        ipv4_address: 10.0.0.1
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: firewall-test-client
+    depends_on:
+      - backend
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    stdin_open: true
+    tty: true
+    command: [ "/opt/fw-tests/entrypoint.sh" ]
+    networks:
+      lan_test: {}
+    restart: "no"
+
+networks:
+  lan_test:
+    name: firewall_lan_test
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+          gateway: 10.0.0.254
