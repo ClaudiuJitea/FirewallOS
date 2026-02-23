@@ -264,24 +264,33 @@ export const DHCP = () => {
 
             {/* DHCP Pools */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50">
-                    <h3 className="text-sm font-bold text-gray-700 flex items-center uppercase tracking-wider">
-                        <Wifi className="w-4 h-4 text-primary mr-2" />
-                        Address Pools
-                    </h3>
+                {/* Table Title Bar */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-primary/10 text-primary">
+                            <Wifi className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800">Address Pools</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">IP ranges served by the DHCP daemon</p>
+                        </div>
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-bold">
+                        {pools.length} {pools.length === 1 ? 'pool' : 'pools'}
+                    </span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                                <th className="px-3 py-3">Interface</th>
-                                <th className="px-3 py-3">IP Range</th>
-                                <th className="px-3 py-3">Subnet Mask</th>
-                                <th className="px-3 py-3">Gateway</th>
-                                <th className="px-3 py-3">DNS</th>
-                                <th className="px-3 py-3 w-20">Lease</th>
-                                <th className="px-3 py-3 w-16 text-center">Status</th>
-                                <th className="px-3 py-3 w-24 text-right">Actions</th>
+                            <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-widest text-gray-400 font-extrabold">
+                                <th className="px-3 py-3.5">Interface</th>
+                                <th className="px-3 py-3.5">IP Range</th>
+                                <th className="px-3 py-3.5">Subnet Mask</th>
+                                <th className="px-3 py-3.5">Gateway</th>
+                                <th className="px-3 py-3.5">DNS Servers</th>
+                                <th className="px-3 py-3.5 w-20">Lease</th>
+                                <th className="px-3 py-3.5 w-16 text-center">Active</th>
+                                <th className="px-3 py-3.5 w-24 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -326,25 +335,35 @@ export const DHCP = () => {
 
                 {/* Static Leases */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-gray-700 flex items-center uppercase tracking-wider">
-                            <Monitor className="w-4 h-4 text-primary mr-2" />
-                            Static Leases (Reservations)
-                        </h3>
-                        <button onClick={() => openLeaseModal()} className="h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 rounded-lg text-xs font-medium flex items-center transition-colors border border-gray-200">
-                            <Plus className="w-3.5 h-3.5 mr-1" />
-                            Add Reservation
-                        </button>
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600">
+                                <Monitor className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-800">Static Leases</h3>
+                                <p className="text-xs text-gray-400 mt-0.5">Fixed IP reservations by MAC address</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">
+                                {staticLeases.length}
+                            </span>
+                            <button onClick={() => openLeaseModal()} className="h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 rounded-lg text-xs font-medium flex items-center transition-colors border border-gray-200">
+                                <Plus className="w-3.5 h-3.5 mr-1" />
+                                Add
+                            </button>
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                                    <th className="px-3 py-3">MAC Address</th>
-                                    <th className="px-3 py-3">IP Address</th>
-                                    <th className="px-3 py-3">Hostname</th>
-                                    <th className="px-3 py-3 w-16 text-center">Status</th>
-                                    <th className="px-3 py-3 w-20 text-right">Actions</th>
+                                <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-widest text-gray-400 font-extrabold">
+                                    <th className="px-3 py-3.5">MAC Address</th>
+                                    <th className="px-3 py-3.5">IP Address</th>
+                                    <th className="px-3 py-3.5">Hostname</th>
+                                    <th className="px-3 py-3.5 w-16 text-center">Active</th>
+                                    <th className="px-3 py-3.5 w-20 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -377,24 +396,34 @@ export const DHCP = () => {
 
                 {/* Active Leases */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-gray-700 flex items-center uppercase tracking-wider">
-                            <Clock className="w-4 h-4 text-primary mr-2" />
-                            Active Leases (Live)
-                        </h3>
-                        <button onClick={fetchActiveLeases} className="h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 rounded-lg text-xs font-medium flex items-center transition-colors border border-gray-200">
-                            <RefreshCw className="w-3.5 h-3.5 mr-1" />
-                            Refresh
-                        </button>
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600">
+                                <Clock className="w-5 h-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-800">Active Leases</h3>
+                                <p className="text-xs text-gray-400 mt-0.5">Live clients · Auto-refreshes every 5s</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-xs font-bold">
+                                {activeLeases.length} online
+                            </span>
+                            <button onClick={fetchActiveLeases} className="h-8 bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 rounded-lg text-xs font-medium flex items-center transition-colors border border-gray-200">
+                                <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                                Refresh
+                            </button>
+                        </div>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                                    <th className="px-3 py-3">IP Address</th>
-                                    <th className="px-3 py-3">MAC Address</th>
-                                    <th className="px-3 py-3">Hostname</th>
-                                    <th className="px-3 py-3">Expires</th>
+                                <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-widest text-gray-400 font-extrabold">
+                                    <th className="px-3 py-3.5">IP Address</th>
+                                    <th className="px-3 py-3.5">MAC Address</th>
+                                    <th className="px-3 py-3.5">Hostname</th>
+                                    <th className="px-3 py-3.5">Lease Expires</th>
                                 </tr>
                             </thead>
                             <tbody>

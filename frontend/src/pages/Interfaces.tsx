@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, Edit2, CheckCircle, XCircle, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, CheckCircle, XCircle, X, Network } from 'lucide-react';
 import { useAuthStore } from '../store';
 
 interface Interface {
@@ -126,16 +126,31 @@ export const Interfaces = () => {
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                {/* Table Title Bar */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-blue-50 text-blue-600">
+                            <Network className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800">Configured Interfaces</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">Physical and logical network interfaces</p>
+                        </div>
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold">
+                        {interfaces.length} {interfaces.length === 1 ? 'interface' : 'interfaces'}
+                    </span>
+                </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                                <th className="px-3 py-3">Name</th>
-                                <th className="px-3 py-3">Physical Interface</th>
-                                <th className="px-3 py-3">IP Address</th>
-                                <th className="px-3 py-3">Netmask</th>
-                                <th className="px-3 py-3 w-16 text-center">Status</th>
-                                <th className="px-3 py-3 w-24 text-right">Actions</th>
+                            <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-widest text-gray-400 font-extrabold">
+                                <th className="px-3 py-3.5">Name</th>
+                                <th className="px-3 py-3.5">Physical Device</th>
+                                <th className="px-3 py-3.5">IP Address</th>
+                                <th className="px-3 py-3.5">Netmask</th>
+                                <th className="px-3 py-3.5 w-16 text-center">Active</th>
+                                <th className="px-3 py-3.5 w-24 text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody>

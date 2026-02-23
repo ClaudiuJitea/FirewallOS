@@ -14,7 +14,7 @@ interface LogEntry {
 
 export const Logs = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(true);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Advanced Filter State
@@ -101,7 +101,7 @@ export const Logs = () => {
       </div>
 
       <div className="bg-[#1E1E2E] rounded-xl shadow-lg border border-gray-800 flex-1 flex flex-col overflow-hidden font-mono text-sm leading-relaxed">
-        <div className="flex flex-col border-b border-gray-800 bg-black/20 shrink-0">
+        <div className="flex flex-col bg-black/20 shrink-0">
           <div className="flex items-center space-x-4 p-4">
             <button
               onClick={() => setShowFilters(!showFilters)}
@@ -162,30 +162,81 @@ export const Logs = () => {
           )}
         </div>
 
-        <div className="flex-1 overflow-auto p-4 space-y-1">
-          {filteredLogs.length === 0 ? (
-            <div className="text-gray-500 text-center py-10">No matching logs found...</div>
-          ) : (
-            filteredLogs.map((log, i) => (
-              <div key={i} className="flex items-center space-x-3 hover:bg-white/5 py-1 px-2 rounded transition-colors group">
-                <span className="text-gray-500 shrink-0 w-24 text-xs">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                <span className={`w-14 font-bold shrink-0 text-xs uppercase tracking-wider ${log.action === 'ALLOW' ? 'text-green-500' : log.action === 'BLOCK' ? 'text-red-500' : 'text-yellow-400'}`}>
-                  {log.action}
-                </span>
-                <span className="text-blue-400/80 w-10 shrink-0 text-xs font-semibold">{log.protocol}</span>
-                <span className="text-gray-300 flex-1 flex items-center text-sm">
-                  <span className="text-[#a6e3a1]">{log.source}</span>
-                  <span className="text-gray-600 mx-2 text-xs">→</span>
-                  <span className="text-[#89b4fa]">{log.destination}</span>
-                  <span className="text-[#f9e2af] ml-1">:{log.port}</span>
-                </span>
-                {log.country && log.country !== 'Unknown' && (
-                  <span className="text-[#cba6f7] shrink-0 text-xs font-bold bg-[#cba6f7]/10 px-1.5 py-0.5 rounded border border-[#cba6f7]/20">{log.country}</span>
-                )}
-                <span className="text-gray-500 shrink-0 text-xs w-16 text-right opacity-0 group-hover:opacity-100 transition-opacity">{log.interface}</span>
-              </div>
-            ))
-          )}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full border-collapse text-sm" style={{ minWidth: '900px' }}>
+            <thead className="sticky top-0 z-20">
+              <tr className="bg-[#0a0e1f] border-b-2 border-[#3b4775]">
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Timestamp
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Action
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Protocol
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Source IP
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Destination IP
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Port
+                </th>
+                <th className="text-center px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] border-r border-[#2a334d] whitespace-nowrap">
+                  Country
+                </th>
+                <th className="text-left px-4 py-3 text-[11px] uppercase tracking-widest font-extrabold text-[#8892b8] whitespace-nowrap">
+                  Interface
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-gray-500 text-center py-10">No matching logs found...</td>
+                </tr>
+              ) : (
+                filteredLogs.map((log, i) => (
+                  <tr key={i} className="hover:bg-white/5 transition-colors border-b border-[#1e2545]">
+                    <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap border-r border-[#1e2545]">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="px-4 py-2.5 border-r border-[#1e2545]">
+                      <span className={`font-bold text-xs uppercase tracking-wider ${log.action === 'ALLOW' ? 'text-green-400' : log.action === 'BLOCK' ? 'text-red-400' : 'text-yellow-400'}`}>
+                        {log.action}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-blue-300 text-xs font-semibold border-r border-[#1e2545]">
+                      {log.protocol}
+                    </td>
+                    <td className="px-4 py-2.5 text-[#a6e3a1] text-sm font-mono border-r border-[#1e2545]">
+                      {log.source}
+                    </td>
+                    <td className="px-4 py-2.5 text-[#89b4fa] text-sm font-mono border-r border-[#1e2545]">
+                      {log.destination}
+                    </td>
+                    <td className="px-4 py-2.5 text-[#f9e2af] text-sm font-mono border-r border-[#1e2545]">
+                      {log.port}
+                    </td>
+                    <td className="px-4 py-2.5 text-center border-r border-[#1e2545]">
+                      {log.country && log.country !== 'Unknown' ? (
+                        <span className="text-[#cba6f7] font-bold text-xs bg-[#cba6f7]/10 px-2 py-0.5 rounded border border-[#cba6f7]/20">
+                          {log.country}
+                        </span>
+                      ) : (
+                        <span className="text-gray-600">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-400 text-xs">
+                      {log.interface || '—'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
           <div ref={logsEndRef} />
         </div>
       </div>

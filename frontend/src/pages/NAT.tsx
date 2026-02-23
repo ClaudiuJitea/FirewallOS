@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { GripVertical, Plus, Trash2, Edit2, CheckCircle, XCircle, Cpu, X, RefreshCw } from 'lucide-react';
+import { GripVertical, Plus, Trash2, Edit2, CheckCircle, XCircle, Cpu, X, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { useAuthStore } from '../store';
 
 interface NatRule {
@@ -208,21 +208,36 @@ export const NAT = () => {
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                {/* Table Title Bar */}
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+                    <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-purple-50 text-purple-600">
+                            <ArrowLeftRight className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800">NAT Translation Rules</h3>
+                            <p className="text-xs text-gray-400 mt-0.5">Drag to reorder · DNAT (Port Forward) and SNAT (Masquerade)</p>
+                        </div>
+                    </div>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-purple-50 text-purple-600 text-xs font-bold">
+                        {rules.length} {rules.length === 1 ? 'rule' : 'rules'}
+                    </span>
+                </div>
                 <div className="overflow-x-auto">
                     <DragDropContext onDragEnd={onDragEnd}>
                         <Droppable droppableId="nat-rules-list">
                             {(provided) => (
                                 <table className="w-full text-left border-collapse" {...provided.droppableProps} ref={provided.innerRef}>
                                     <thead>
-                                        <tr className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                                            <th className="px-3 py-3 w-10"></th>
-                                            <th className="px-3 py-3 w-14 text-center">Pri</th>
-                                            <th className="px-3 py-3">Name</th>
-                                            <th className="px-3 py-3 w-24">Type</th>
-                                            <th className="px-3 py-3">Original (Src / Dst / Port)</th>
-                                            <th className="px-3 py-3">Translated (IP / Port)</th>
-                                            <th className="px-3 py-3 w-16 text-center">Status</th>
-                                            <th className="px-3 py-3 w-24 text-right">Actions</th>
+                                        <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-widest text-gray-400 font-extrabold">
+                                            <th className="px-3 py-3.5 w-10"></th>
+                                            <th className="px-3 py-3.5 w-14 text-center">#</th>
+                                            <th className="px-3 py-3.5">Rule Name</th>
+                                            <th className="px-3 py-3.5 w-24">Type</th>
+                                            <th className="px-3 py-3.5">Original (Src / Dst / Port)</th>
+                                            <th className="px-3 py-3.5">Translated (IP / Port)</th>
+                                            <th className="px-3 py-3.5 w-16 text-center">Active</th>
+                                            <th className="px-3 py-3.5 w-24 text-right">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>

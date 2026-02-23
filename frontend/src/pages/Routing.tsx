@@ -199,23 +199,34 @@ export const RoutingTable = () => {
       </div>
 
       {/* Managed Routes (from DB) */}
-      <div>
-        <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">Managed Routes (Table 100)</h3>
-      </div>
-
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Table Title Bar */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-orange-50 text-orange-600">
+              <RouteIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-800">Managed Static Routes</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Deployed via kernel routing table 100</p>
+            </div>
+          </div>
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-orange-50 text-orange-600 text-xs font-bold">
+            {routes.length} {routes.length === 1 ? 'route' : 'routes'}
+          </span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                <th className="px-3 py-3 w-10"><RouteIcon className="w-4 h-4 text-gray-400" /></th>
-                <th className="px-3 py-3">Destination IP / CIDR</th>
-                <th className="px-3 py-3">Gateway</th>
-                <th className="px-3 py-3">Interface</th>
-                <th className="px-3 py-3 w-16 text-center">Metric</th>
-                <th className="px-3 py-3">Description</th>
-                <th className="px-3 py-3 w-16 text-center">Status</th>
-                <th className="px-3 py-3 w-24 text-right">Actions</th>
+              <tr className="bg-gradient-to-r from-slate-50 to-gray-50 border-b border-gray-100 text-[11px] uppercase tracking-widest text-gray-400 font-extrabold">
+                <th className="px-3 py-3.5 w-10"><RouteIcon className="w-4 h-4 text-gray-300" /></th>
+                <th className="px-3 py-3.5">Destination IP / CIDR</th>
+                <th className="px-3 py-3.5">Gateway</th>
+                <th className="px-3 py-3.5">Interface</th>
+                <th className="px-3 py-3.5 w-16 text-center">Metric</th>
+                <th className="px-3 py-3.5">Description</th>
+                <th className="px-3 py-3.5 w-16 text-center">Active</th>
+                <th className="px-3 py-3.5 w-24 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>

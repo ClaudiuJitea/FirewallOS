@@ -19,7 +19,23 @@ services:
       - NET_ADMIN
       - NET_RAW
     init: true
+    networks:
+      default:
+        interface_name: eth0
+        gw_priority: 1
+      lan:
+        interface_name: eth1
+        gw_priority: 0
     restart: always
 
 volumes:
   firewall_data:
+
+networks:
+  lan:
+    name: firewall_lan
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24
+          gateway: 10.0.0.254

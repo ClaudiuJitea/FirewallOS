@@ -15,7 +15,7 @@ The project contains three main components:
 | File | Purpose |
 |---|---|
 | `docker-compose-firewall.yml` | Defines the **frontend** and **backend** services (main firewall stack) |
-| `docker-compose-client.yml` | Defines the **client** service and the isolated `lan_test` bridge network |
+| `docker-compose-client.yml` | Defines the **client** service and attaches it to the `firewall_lan` bridge network |
 
 Both stacks are fully **independent** — they can be started and stopped separately.
 
@@ -93,9 +93,9 @@ chmod +x firewall-client.sh
 | 8 | Shell into the client container |
 | 0 | Exit |
 
-The client connects to the isolated `firewall_lan_test` bridge network (`10.0.0.0/24`). The backend is reachable at `10.0.0.1`.
+The client connects to the `firewall_lan` bridge network (`10.0.0.0/24`). The backend is reachable at `10.0.0.1`.
 
-> **Note:** Start the firewall stack first so the `firewall_lan_test` network exists before deploying the client.
+> **Note:** Start the firewall stack first so the `firewall_lan` network exists before deploying the client.
 
 ---
 
@@ -131,5 +131,5 @@ The simulation pane enables robust verification of rule hierarchies without affe
 ## Troubleshooting
 
 - **DHCP Issues:** Verify that the `backend` container has been started with `NET_ADMIN` and `NET_RAW` capabilities — both are set in `docker-compose-firewall.yml`.
-- **Client Connectivity:** The client uses its own standalone `docker-compose-client.yml`. Make sure the firewall stack is running first so the `firewall_lan_test` network is available.
+- **Client Connectivity:** The client uses its own standalone `docker-compose-client.yml`. Make sure the firewall stack is running first so the `firewall_lan` network is available.
 - **Shell access not working:** If option 8 fails, the container may not be running. Use option 5 (Status) to verify, then option 2 (Start) or option 1 (Deploy) to bring it up.

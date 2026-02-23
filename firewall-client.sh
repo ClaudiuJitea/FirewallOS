@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-COMPOSE_CLIENT="docker compose -f docker-compose-client.yml"
+COMPOSE_CLIENT="docker compose -p firewallos-client -f docker-compose-client.yml"
 
 print_header() {
     clear
@@ -63,7 +63,17 @@ execute_action() {
             ;;
         "down")
             echo -e "${RED}Tearing down containers and networks...${NC}"
-            $compose_cmd rm -fsv client
+            $compose_cmd down --remove-orphans
+            if docker network inspect firewall_lan &> /dev/null; then
+                local attached_count
+                attached_count=$(docker network inspect firewall_lan -f '{{len .Containers}}' 2>/dev/null || echo 1)
+                if [ "$attached_count" -eq 0 ]; then
+                    echo -e "${YELLOW}Removing unused network firewall_lan...${NC}"
+                    docker network rm firewall_lan >/dev/null 2>&1 || true
+                else
+                    echo -e "${YELLOW}Skipping network removal: firewall_lan is still in use.${NC}"
+                fi
+            fi
             ;;
         "shell")
             echo -e "${GREEN}Opening shell in client container...${NC}"

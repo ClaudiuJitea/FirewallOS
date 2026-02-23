@@ -12,14 +12,10 @@ services:
     tty: true
     command: [ "/opt/fw-tests/entrypoint.sh" ]
     networks:
-      lan_test: {}
+      lan: {}
     restart: "no"
 
 networks:
-  lan_test:
-    name: firewall_lan_test
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 10.0.0.0/24
-          gateway: 10.0.0.254
+  lan:
+    external: true
+    name: firewall_lan

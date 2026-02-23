@@ -8,7 +8,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-COMPOSE_MAIN="docker compose -f docker-compose-firewall.yml"
+COMPOSE_MAIN="docker compose -p firewallos-main -f docker-compose-firewall.yml"
 
 print_header() {
     clear
@@ -63,7 +63,7 @@ execute_action() {
             ;;
         "down")
             echo -e "${RED}Tearing down containers and networks...${NC}"
-            $compose_cmd rm -fsv frontend backend
+            $compose_cmd down --remove-orphans
             ;;
         "shell-frontend")
             echo -e "${GREEN}Opening shell in frontend container...${NC}"
