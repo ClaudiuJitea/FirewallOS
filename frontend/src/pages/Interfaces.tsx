@@ -12,8 +12,16 @@ interface Interface {
     status: number;
 }
 
+interface PhysicalInterfaceOption {
+    name: string;
+    state: string;
+    configured: boolean;
+    inUseBy: string[];
+}
+
 export const Interfaces = () => {
     const [interfaces, setInterfaces] = useState<Interface[]>([]);
+    const [availablePhysical, setAvailablePhysical] = useState<PhysicalInterfaceOption[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingInterface, setEditingInterface] = useState<Interface | null>(null);
     const token = useAuthStore(state => state.token);
@@ -33,9 +41,19 @@ export const Interfaces = () => {
         }
     };
 
+    const fetchAvailablePhysicalInterfaces = async () => {
+        try {
+            const res = await fetch('/api/interfaces/available-physical', { headers: { Authorization: `Bearer ${token}` } });
+            if (res.ok) setAvailablePhysical(await res.json());
+        } catch {
+            console.error("Failed to fetch available physical interfaces");
+        }
+    };
+
     useEffect(() => {
         fetchInterfaces();
-    }, []);
+        fetchAvailablePhysicalInterfaces();
+    }, [token]);
 
     const handleDelete = async (id: number) => {
         if (!confirm('Are you sure you want to delete this interface?')) return;
@@ -67,6 +85,7 @@ export const Interfaces = () => {
     };
 
     const openModal = (iface?: Interface) => {
+        fetchAvailablePhysicalInterfaces();
         if (iface) {
             setEditingInterface(iface);
             setName(iface.name);
@@ -82,6 +101,21 @@ export const Interfaces = () => {
         }
         setIsModalOpen(true);
     };
+
+    const physicalOptions = React.useMemo(() => {
+        const map = new Map<string, PhysicalInterfaceOption>();
+        for (const item of availablePhysical) map.set(item.name, item);
+
+        if (editingInterface?.physical_interface && !map.has(editingInterface.physical_interface)) {
+            map.set(editingInterface.physical_interface, {
+                name: editingInterface.physical_interface,
+                state: 'MISSING',
+                configured: true,
+                inUseBy: [editingInterface.name],
+            });
+        }
+        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }, [availablePhysical, editingInterface]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -198,7 +232,23 @@ export const Interfaces = () => {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Physical Interface</label>
-                                    <input type="text" value={physicalInterface} onChange={e => setPhysicalInterface(e.target.value)} required placeholder="e.g. eth0" className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" />
+                                    <select
+                                        value={physicalInterface}
+                                        onChange={e => setPhysicalInterface(e.target.value)}
+                                        required
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all"
+                                    >
+                                        <option value="">Select detected interface...</option>
+                                        {physicalOptions.map((iface) => (
+                                            <option key={iface.name} value={iface.name}>
+                                                {iface.name} [{iface.state}]
+                                                {iface.inUseBy.length > 0 ? ` - in use by ${iface.inUseBy.join(', ')}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        Detected from container runtime. If an interface is marked as in use, only reuse it intentionally.
+                                    </p>
                                 </div>
 
                                 <div>

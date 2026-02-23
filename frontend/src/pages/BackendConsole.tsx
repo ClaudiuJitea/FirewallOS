@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Database, RefreshCw, Shield, Terminal, Wifi, Route, Hammer } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Database, RefreshCw, Shield, Terminal, Wifi, Route, Hammer, Play, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../store';
 
 type SystemDump = {
@@ -38,6 +38,12 @@ export const BackendConsole = () => {
     const [error, setError] = useState<string | null>(null);
     const [lastApplyMessage, setLastApplyMessage] = useState<string>('');
     const [showRawDump, setShowRawDump] = useState(false);
+    const [shellCommand, setShellCommand] = useState('ip -br addr');
+    const [shellRunning, setShellRunning] = useState(false);
+    const [shellOutput, setShellOutput] = useState('');
+    const [shellError, setShellError] = useState('');
+    const [shellExitCode, setShellExitCode] = useState<number | null>(null);
+    const [shellTimedOut, setShellTimedOut] = useState(false);
 
     const fetchAll = async () => {
         if (!token) return;
@@ -99,6 +105,45 @@ export const BackendConsole = () => {
         const id = setInterval(fetchAll, 7000);
         return () => clearInterval(id);
     }, [token]);
+
+    const runShellCommand = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (!token || shellRunning) return;
+        const command = shellCommand.trim();
+        if (!command) return;
+
+        setShellRunning(true);
+        setShellOutput('');
+        setShellError('');
+        setShellExitCode(null);
+        setShellTimedOut(false);
+
+        try {
+            const res = await fetch('/api/system/shell', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                },
+                body: JSON.stringify({ command })
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                setShellError(data?.error || 'Command failed');
+                return;
+            }
+
+            setShellOutput(String(data?.stdout || ''));
+            setShellError(String(data?.stderr || ''));
+            setShellExitCode(typeof data?.exitCode === 'number' ? data.exitCode : null);
+            setShellTimedOut(!!data?.timedOut);
+        } catch {
+            setShellError('Failed to execute command: backend unreachable.');
+        } finally {
+            setShellRunning(false);
+        }
+    };
 
     const diagnostics = useMemo(() => {
         const dbRuleCount = dump?.rules?.length ?? 0;
@@ -291,6 +336,61 @@ export const BackendConsole = () => {
                 <div className="bg-[#1E1E2E] rounded-xl shadow-lg border border-gray-800 overflow-hidden">
                     <div className="px-4 py-3 border-b border-gray-800 bg-black/30 text-sm font-mono text-gray-300">dnsmasq Recent Log</div>
                     <pre className="p-4 text-xs text-purple-200 whitespace-pre-wrap overflow-auto max-h-[320px]">{status?.dnsStatus?.logTail || '(no data)'}</pre>
+                </div>
+            </div>
+
+            <div className="bg-[#1E1E2E] rounded-xl shadow-lg border border-gray-800 overflow-hidden">
+                <div className="px-4 py-3 border-b border-gray-800 bg-black/30 flex items-center justify-between">
+                    <span className="text-sm font-mono text-gray-300">Firewall Container Shell</span>
+                    <div className="flex items-center gap-2 text-xs">
+                        {shellExitCode !== null && (
+                            <span className={`px-2 py-1 rounded border ${shellExitCode === 0 ? 'text-green-300 border-green-700/50 bg-green-900/20' : 'text-red-300 border-red-700/50 bg-red-900/20'}`}>
+                                exit {shellExitCode}{shellTimedOut ? ' (timeout)' : ''}
+                            </span>
+                        )}
+                    </div>
+                </div>
+                <form onSubmit={runShellCommand} className="p-4 border-b border-gray-800 bg-black/20">
+                    <div className="flex flex-col md:flex-row gap-2">
+                        <input
+                            type="text"
+                            value={shellCommand}
+                            onChange={(e) => setShellCommand(e.target.value)}
+                            placeholder="Run command in backend container (e.g. ip route)"
+                            className="flex-1 bg-[#111827] border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <button
+                            type="submit"
+                            disabled={shellRunning}
+                            className="h-10 px-4 bg-primary hover:bg-[#00796B] disabled:opacity-60 text-white rounded text-sm font-semibold flex items-center justify-center"
+                        >
+                            <Play className={`w-4 h-4 mr-1.5 ${shellRunning ? 'animate-pulse' : ''}`} />
+                            {shellRunning ? 'Running...' : 'Run'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShellOutput('');
+                                setShellError('');
+                                setShellExitCode(null);
+                                setShellTimedOut(false);
+                            }}
+                            className="h-10 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-semibold flex items-center justify-center"
+                        >
+                            <Trash2 className="w-4 h-4 mr-1.5" />
+                            Clear
+                        </button>
+                    </div>
+                </form>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-0">
+                    <div className="border-r border-gray-800">
+                        <div className="px-4 py-2 text-xs uppercase tracking-wider text-gray-400 bg-black/30 border-b border-gray-800">STDOUT</div>
+                        <pre className="p-4 text-xs text-green-200 whitespace-pre-wrap overflow-auto max-h-[320px]">{shellOutput || '(no output)'}</pre>
+                    </div>
+                    <div>
+                        <div className="px-4 py-2 text-xs uppercase tracking-wider text-gray-400 bg-black/30 border-b border-gray-800">STDERR</div>
+                        <pre className="p-4 text-xs text-red-200 whitespace-pre-wrap overflow-auto max-h-[320px]">{shellError || '(no error output)'}</pre>
+                    </div>
                 </div>
             </div>
         </div>

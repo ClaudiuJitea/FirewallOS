@@ -4,6 +4,7 @@ const express_1 = require("express");
 const db_1 = require("../db");
 const auth_1 = require("../middleware/auth");
 const child_process_1 = require("child_process");
+const child_process_2 = require("child_process");
 const nftables_1 = require("../nftables");
 const dnsmasq_1 = require("../dnsmasq");
 const systemMetrics_1 = require("../systemMetrics");
@@ -169,6 +170,41 @@ router.post('/logs/dnsmasq/clear', async (_req, res) => {
     catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Failed to clear dnsmasq logs' });
+    }
+});
+router.post('/shell', async (req, res) => {
+    try {
+        const raw = typeof req.body?.command === 'string' ? req.body.command : '';
+        const command = raw.trim();
+        if (!command) {
+            res.status(400).json({ error: 'Command is required' });
+            return;
+        }
+        if (command.length > 500) {
+            res.status(400).json({ error: 'Command too long (max 500 chars)' });
+            return;
+        }
+        // Run inside backend container context with bounded execution time.
+        const result = (0, child_process_2.spawnSync)('/bin/bash', ['-lc', command], {
+            encoding: 'utf-8',
+            timeout: 15000,
+            maxBuffer: 1024 * 1024,
+        });
+        const timedOut = result.error?.code === 'ETIMEDOUT';
+        const stdout = result.stdout || '';
+        const stderr = result.stderr || '';
+        const exitCode = timedOut ? 124 : (typeof result.status === 'number' ? result.status : 1);
+        res.json({
+            command,
+            exitCode,
+            timedOut,
+            stdout,
+            stderr,
+        });
+    }
+    catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Failed to execute shell command' });
     }
 });
 exports.default = router;

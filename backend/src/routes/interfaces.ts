@@ -2,10 +2,83 @@ import express from 'express';
 import { runQuery, allQuery, getQuery } from '../db';
 import { authenticate } from '../middleware/auth';
 import { applyAllInterfaceConfigs, applyInterfaceConfig } from '../network';
+import { execSync } from 'child_process';
 
 const router = express.Router();
 
 router.use(authenticate);
+
+type PhysicalIface = {
+    name: string;
+    state: string;
+    configured: boolean;
+    inUseBy: string[];
+};
+
+function getPhysicalInterfaces(): Array<{ name: string; state: string }> {
+    try {
+        const out = execSync('ip -o link show', { encoding: 'utf-8', timeout: 10000 });
+        return out
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => {
+                // Format: "2: eth0@if53: <...> mtu ... state UP ..."
+                const m = line.match(/^\d+:\s+([^:]+):.*\bstate\s+(\S+)/i);
+                if (!m) return null;
+                const rawName = m[1];
+                const name = rawName.split('@')[0];
+                const state = (m[2] || 'UNKNOWN').toUpperCase();
+                if (!name || name === 'lo') return null;
+                return { name, state };
+            })
+            .filter((x): x is { name: string; state: string } => !!x);
+    } catch {
+        return [];
+    }
+}
+
+// Discover physical interfaces available in the runtime container.
+router.get('/available-physical', async (_req, res) => {
+    try {
+        const configuredInterfaces = await allQuery('SELECT name, physical_interface FROM interfaces ORDER BY name ASC');
+        const configuredByPhysical = new Map<string, string[]>();
+        for (const row of configuredInterfaces) {
+            const physical = String(row.physical_interface || '').trim();
+            const logical = String(row.name || '').trim();
+            if (!physical || !logical) continue;
+            const list = configuredByPhysical.get(physical) || [];
+            list.push(logical);
+            configuredByPhysical.set(physical, list);
+        }
+
+        const found = getPhysicalInterfaces();
+        const result: PhysicalIface[] = found.map((iface) => {
+            const inUseBy = configuredByPhysical.get(iface.name) || [];
+            return {
+                name: iface.name,
+                state: iface.state,
+                configured: inUseBy.length > 0,
+                inUseBy,
+            };
+        });
+
+        // Also include interfaces referenced in DB but not currently visible in kernel output.
+        for (const [physical, inUseBy] of configuredByPhysical.entries()) {
+            if (result.some((x) => x.name === physical)) continue;
+            result.push({
+                name: physical,
+                state: 'MISSING',
+                configured: true,
+                inUseBy,
+            });
+        }
+
+        res.json(result.sort((a, b) => a.name.localeCompare(b.name)));
+    } catch {
+        res.status(500).json({ error: 'Failed to discover physical interfaces' });
+    }
+});
 
 // Get all interfaces
 router.get('/', async (req, res) => {

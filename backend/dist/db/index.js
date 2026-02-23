@@ -186,13 +186,9 @@ function initializeDb() {
         });
         exports.db.get('SELECT COUNT(*) as count FROM interfaces', (err, row) => {
             if (!err && row && row.count === 0) {
-                exports.db.run('INSERT INTO interfaces (name, physical_interface, ip_address, netmask) VALUES (?, ?, ?, ?)', ['WAN', 'eth0', '192.168.1.100', '255.255.255.0']);
-                exports.db.run('INSERT INTO interfaces (name, physical_interface, ip_address, netmask) VALUES (?, ?, ?, ?)', ['LAN', 'eth1', '10.0.0.1', '255.255.255.0']);
-            }
-        });
-        exports.db.get('SELECT COUNT(*) as count FROM dhcp_pools', (err, row) => {
-            if (!err && row && row.count === 0) {
-                exports.db.run('INSERT INTO dhcp_pools (interface, range_start, range_end, subnet_mask, gateway, dns_servers, lease_time, domain, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', ['LAN', '10.0.0.100', '10.0.0.200', '255.255.255.0', '10.0.0.1', '10.0.0.1,8.8.8.8', 86400, 'local.lan', 1]);
+                // Keep default logical interfaces, but leave L3 values empty so admin can set IP/netmask post-deploy.
+                exports.db.run('INSERT INTO interfaces (name, physical_interface, ip_address, netmask) VALUES (?, ?, ?, ?)', ['WAN', 'eth0', '', '']);
+                exports.db.run('INSERT INTO interfaces (name, physical_interface, ip_address, netmask) VALUES (?, ?, ?, ?)', ['LAN', 'eth1', '', '']);
             }
         });
     });

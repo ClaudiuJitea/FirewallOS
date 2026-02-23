@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { allQuery } from '../db';
 import { authenticate } from '../middleware/auth';
 import { execSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import { applyAllRules, applyRoutes, getCurrentNftRuleset, getCurrentRoutes, initNftables } from '../nftables';
 import { applyDhcpConfig, applyDnsRules, getDnsmasqStatus, initDnsmasq } from '../dnsmasq';
 import { getSystemMetrics } from '../systemMetrics';
@@ -174,6 +175,45 @@ router.post('/logs/dnsmasq/clear', async (_req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).json({ error: 'Failed to clear dnsmasq logs' });
+    }
+});
+
+router.post('/shell', async (req, res) => {
+    try {
+        const raw = typeof req.body?.command === 'string' ? req.body.command : '';
+        const command = raw.trim();
+
+        if (!command) {
+            res.status(400).json({ error: 'Command is required' });
+            return;
+        }
+        if (command.length > 500) {
+            res.status(400).json({ error: 'Command too long (max 500 chars)' });
+            return;
+        }
+
+        // Run inside backend container context with bounded execution time.
+        const result = spawnSync('/bin/bash', ['-lc', command], {
+            encoding: 'utf-8',
+            timeout: 15000,
+            maxBuffer: 1024 * 1024,
+        });
+
+        const timedOut = (result.error as any)?.code === 'ETIMEDOUT';
+        const stdout = result.stdout || '';
+        const stderr = result.stderr || '';
+        const exitCode = timedOut ? 124 : (typeof result.status === 'number' ? result.status : 1);
+
+        res.json({
+            command,
+            exitCode,
+            timedOut,
+            stdout,
+            stderr,
+        });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Failed to execute shell command' });
     }
 });
 
