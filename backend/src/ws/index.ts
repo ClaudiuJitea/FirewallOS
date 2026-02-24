@@ -1,8 +1,10 @@
 import { Server as HttpServer } from 'http';
 import { spawn, type ChildProcessByStdio } from 'child_process';
 import type { Readable } from 'stream';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
+import * as pty from 'node-pty';
 import ipaddr from 'ipaddr.js';
+import jwt from 'jsonwebtoken';
 import { allQuery } from '../db';
 import { getInterfaceNameMap } from '../network';
 
@@ -329,9 +331,9 @@ function startCapture(): void {
 }
 
 export function setupWebSocket(server: HttpServer) {
-  const wss = new WebSocketServer({ server, path: '/api/logs' });
+  const logsWss = new WebSocketServer({ noServer: true });
 
-  wss.on('connection', (ws) => {
+  logsWss.on('connection', (ws) => {
     clients.add(ws);
     if (clients.size === 1) startCapture();
     console.log('Client connected to live log stream');
@@ -341,5 +343,145 @@ export function setupWebSocket(server: HttpServer) {
       if (clients.size === 0) stopCapture();
       console.log('Client disconnected from live log stream');
     });
+  });
+
+  const shellWss = new WebSocketServer({ noServer: true });
+
+  shellWss.on('connection', (ws, req) => {
+    const JWT_SECRET = process.env.JWT_SECRET || 'supersecretfirewallkey';
+    const url = new URL(req.url || '/api/shell', 'http://localhost');
+    const token = (url.searchParams.get('token') || '').trim();
+
+    if (!token) {
+      ws.close(1008, 'Missing token');
+      return;
+    }
+
+    try {
+      jwt.verify(token, JWT_SECRET);
+    } catch {
+      ws.close(1008, 'Invalid token');
+      return;
+    }
+
+    // Spawn a real PTY shell session
+    let shell: pty.IPty | null = null;
+
+    try {
+      shell = pty.spawn('/bin/bash', ['--login'], {
+        name: 'xterm-256color',
+        cols: 120,
+        rows: 30,
+        cwd: '/',
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+        } as Record<string, string>,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      ws.send(JSON.stringify({ type: 'error', message: `Failed to spawn shell: ${errMsg}` }));
+      ws.close(1011, 'Shell spawn failed');
+      return;
+    }
+
+    const currentShell = shell;
+
+    // Notify the frontend that the shell is ready
+    ws.send(JSON.stringify({ type: 'ready', pid: currentShell.pid }));
+
+    // Forward PTY output to the WebSocket
+    currentShell.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'output', data }));
+      }
+    });
+
+    currentShell.onExit(({ exitCode, signal }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'exit', code: exitCode, signal }));
+        ws.close(1000, 'Shell exited');
+      }
+      shell = null;
+    });
+
+    // Handle messages from the frontend
+    ws.on('message', (raw) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(raw.toString('utf-8'));
+      } catch {
+        // If it's not JSON, treat it as raw terminal input
+        if (shell) shell.write(raw.toString('utf-8'));
+        return;
+      }
+
+      if (!shell) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'error', message: 'Shell process is not running' }));
+        }
+        return;
+      }
+
+      const action = String(msg?.action || '').toLowerCase();
+
+      if (action === 'input') {
+        const data = String(msg?.data || '');
+        if (data) shell.write(data);
+        return;
+      }
+
+      if (action === 'resize') {
+        const cols = Number(msg?.cols) || 120;
+        const rows = Number(msg?.rows) || 30;
+        shell.resize(cols, rows);
+        return;
+      }
+
+      if (action === 'signal') {
+        const signal = String(msg?.signal || 'SIGINT').toUpperCase();
+        if (signal === 'SIGINT') {
+          // Send Ctrl+C character
+          shell.write('\x03');
+        } else if (signal === 'SIGTERM') {
+          shell.kill('SIGTERM');
+        }
+        return;
+      }
+    });
+
+    ws.on('close', () => {
+      if (shell) {
+        shell.kill('SIGTERM');
+        shell = null;
+      }
+    });
+  });
+
+  server.on('upgrade', (req, socket, head) => {
+    let pathname = '';
+    try {
+      const url = new URL(req.url || '/', 'http://localhost');
+      pathname = url.pathname;
+    } catch {
+      socket.destroy();
+      return;
+    }
+
+    if (pathname === '/api/logs') {
+      logsWss.handleUpgrade(req, socket, head, (ws) => {
+        logsWss.emit('connection', ws, req);
+      });
+      return;
+    }
+
+    if (pathname === '/api/shell') {
+      shellWss.handleUpgrade(req, socket, head, (ws) => {
+        shellWss.emit('connection', ws, req);
+      });
+      return;
+    }
+
+    socket.destroy();
   });
 }

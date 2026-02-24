@@ -28,6 +28,23 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     return response;
 };
 
+const restoreGlobalInteractivity = (): void => {
+    const bodyStyle = document.body.style;
+    const rootStyle = document.documentElement.style;
+
+    if (bodyStyle.pointerEvents === 'none') bodyStyle.pointerEvents = '';
+    if (bodyStyle.userSelect === 'none') bodyStyle.userSelect = '';
+    if (bodyStyle.cursor === 'grabbing' || bodyStyle.cursor === '-webkit-grabbing') bodyStyle.cursor = '';
+    if (rootStyle.cursor === 'grabbing' || rootStyle.cursor === '-webkit-grabbing') rootStyle.cursor = '';
+};
+
+window.addEventListener('pointerup', restoreGlobalInteractivity, { passive: true });
+window.addEventListener('blur', restoreGlobalInteractivity, { passive: true });
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) restoreGlobalInteractivity();
+});
+restoreGlobalInteractivity();
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
         <App />

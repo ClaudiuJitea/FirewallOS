@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Database, RefreshCw, Shield, Terminal, Wifi, Route, Hammer, Play, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { AlertTriangle, CheckCircle2, Database, RefreshCw, Shield, Terminal, Wifi, Route, Hammer, Play, Square, Trash2 } from 'lucide-react';
 import { useAuthStore } from '../store';
-
+import { Terminal as XTerm } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 type SystemDump = {
     rules: any[];
     natRules: any[];
@@ -38,12 +40,13 @@ export const BackendConsole = () => {
     const [error, setError] = useState<string | null>(null);
     const [lastApplyMessage, setLastApplyMessage] = useState<string>('');
     const [showRawDump, setShowRawDump] = useState(false);
-    const [shellCommand, setShellCommand] = useState('ip -br addr');
-    const [shellRunning, setShellRunning] = useState(false);
-    const [shellOutput, setShellOutput] = useState('');
-    const [shellError, setShellError] = useState('');
-    const [shellExitCode, setShellExitCode] = useState<number | null>(null);
-    const [shellTimedOut, setShellTimedOut] = useState(false);
+    const [shellConnected, setShellConnected] = useState(false);
+    const [shellReady, setShellReady] = useState(false);
+    const [shellPid, setShellPid] = useState<number | null>(null);
+    const shellWsRef = useRef<WebSocket | null>(null);
+    const xtermRef = useRef<XTerm | null>(null);
+    const fitAddonRef = useRef<FitAddon | null>(null);
+    const xtermContainerRef = useRef<HTMLDivElement>(null);
 
     const fetchAll = async () => {
         if (!token) return;
@@ -106,44 +109,158 @@ export const BackendConsole = () => {
         return () => clearInterval(id);
     }, [token]);
 
-    const runShellCommand = async (e?: React.FormEvent) => {
-        e?.preventDefault();
-        if (!token || shellRunning) return;
-        const command = shellCommand.trim();
-        if (!command) return;
+    // xterm.js + WebSocket PTY integration
+    useEffect(() => {
+        if (!token || !xtermContainerRef.current) return;
 
-        setShellRunning(true);
-        setShellOutput('');
-        setShellError('');
-        setShellExitCode(null);
-        setShellTimedOut(false);
+        // Create xterm.js instance
+        const term = new XTerm({
+            cursorBlink: true,
+            fontSize: 16,
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Monaco, 'Courier New', monospace",
+            theme: {
+                background: '#1a1b26',
+                foreground: '#c0caf5',
+                cursor: '#c0caf5',
+                selectionBackground: '#33467c',
+                black: '#15161e',
+                red: '#f7768e',
+                green: '#9ece6a',
+                yellow: '#e0af68',
+                blue: '#7aa2f7',
+                magenta: '#bb9af7',
+                cyan: '#7dcfff',
+                white: '#a9b1d6',
+                brightBlack: '#414868',
+                brightRed: '#f7768e',
+                brightGreen: '#9ece6a',
+                brightYellow: '#e0af68',
+                brightBlue: '#7aa2f7',
+                brightMagenta: '#bb9af7',
+                brightCyan: '#7dcfff',
+                brightWhite: '#c0caf5',
+            },
+            allowProposedApi: true,
+            scrollback: 5000,
+            convertEol: true,
+        });
 
-        try {
-            const res = await fetch('/api/system/shell', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify({ command })
-            });
+        const fitAddon = new FitAddon();
+        term.loadAddon(fitAddon);
+        xtermRef.current = term;
+        fitAddonRef.current = fitAddon;
 
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                setShellError(data?.error || 'Command failed');
-                return;
+        term.open(xtermContainerRef.current);
+
+        // Fit terminal to container after a short delay for DOM measurement
+        setTimeout(() => {
+            try { fitAddon.fit(); } catch { /* ignore */ }
+        }, 100);
+
+        // Connect WebSocket
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = process.env.NODE_ENV === 'development'
+            ? `ws://localhost:3000/api/shell?token=${encodeURIComponent(token)}`
+            : `${wsProtocol}//${window.location.host}/api/shell?token=${encodeURIComponent(token)}`;
+
+        const ws = new WebSocket(wsUrl);
+        shellWsRef.current = ws;
+
+        ws.onopen = () => {
+            setShellConnected(true);
+        };
+
+        ws.onclose = () => {
+            setShellConnected(false);
+            setShellReady(false);
+            term.writeln('\r\n\x1b[31m[disconnected]\x1b[0m');
+        };
+
+        ws.onerror = () => {
+            setShellConnected(false);
+            setShellReady(false);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'ready') {
+                    setShellReady(true);
+                    setShellPid(typeof msg.pid === 'number' ? msg.pid : null);
+                    // Send initial resize to sync terminal dimensions
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            action: 'resize',
+                            cols: term.cols,
+                            rows: term.rows,
+                        }));
+                    }
+                    return;
+                }
+                if (msg.type === 'output') {
+                    term.write(String(msg.data || ''));
+                    return;
+                }
+                if (msg.type === 'error') {
+                    term.writeln(`\r\n\x1b[31m[error] ${msg.message}\x1b[0m`);
+                    return;
+                }
+                if (msg.type === 'exit') {
+                    setShellReady(false);
+                    term.writeln(`\r\n\x1b[33m[shell exited code=${msg.code ?? 'null'} signal=${msg.signal ?? 'null'}]\x1b[0m`);
+                }
+            } catch {
+                term.writeln('\r\n\x1b[31m[error] invalid shell response\x1b[0m');
             }
+        };
 
-            setShellOutput(String(data?.stdout || ''));
-            setShellError(String(data?.stderr || ''));
-            setShellExitCode(typeof data?.exitCode === 'number' ? data.exitCode : null);
-            setShellTimedOut(!!data?.timedOut);
-        } catch {
-            setShellError('Failed to execute command: backend unreachable.');
-        } finally {
-            setShellRunning(false);
-        }
-    };
+        // Forward terminal input to WebSocket
+        const dataDisposable = term.onData((data: string) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'input', data }));
+            }
+        });
+
+        // Forward resize events to backend PTY
+        const resizeDisposable = term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ action: 'resize', cols, rows }));
+            }
+        });
+
+        // Handle window resize
+        const handleWindowResize = () => {
+            try { fitAddon.fit(); } catch { /* ignore */ }
+        };
+        window.addEventListener('resize', handleWindowResize);
+
+        // Focus terminal
+        term.focus();
+
+        return () => {
+            window.removeEventListener('resize', handleWindowResize);
+            dataDisposable.dispose();
+            resizeDisposable.dispose();
+            ws.close();
+            shellWsRef.current = null;
+            term.dispose();
+            xtermRef.current = null;
+            fitAddonRef.current = null;
+        };
+    }, [token]);
+
+    const focusTerminal = useCallback(() => {
+        xtermRef.current?.focus();
+    }, []);
+
+    const stopShellCommand = useCallback(() => {
+        if (!shellConnected || !shellReady || !shellWsRef.current) return;
+        shellWsRef.current.send(JSON.stringify({ action: 'signal', signal: 'SIGINT' }));
+    }, [shellConnected, shellReady]);
+
+    const clearTerminal = useCallback(() => {
+        xtermRef.current?.clear();
+    }, []);
 
     const diagnostics = useMemo(() => {
         const dbRuleCount = dump?.rules?.length ?? 0;
@@ -339,59 +456,54 @@ export const BackendConsole = () => {
                 </div>
             </div>
 
-            <div className="bg-[#1E1E2E] rounded-xl shadow-lg border border-gray-800 overflow-hidden">
+            <div className="bg-[#1a1b26] rounded-xl shadow-lg border border-gray-800 overflow-hidden">
                 <div className="px-4 py-3 border-b border-gray-800 bg-black/30 flex items-center justify-between">
                     <span className="text-sm font-mono text-gray-300">Firewall Container Shell</span>
-                    <div className="flex items-center gap-2 text-xs">
-                        {shellExitCode !== null && (
-                            <span className={`px-2 py-1 rounded border ${shellExitCode === 0 ? 'text-green-300 border-green-700/50 bg-green-900/20' : 'text-red-300 border-red-700/50 bg-red-900/20'}`}>
-                                exit {shellExitCode}{shellTimedOut ? ' (timeout)' : ''}
-                            </span>
-                        )}
+                    <div className="flex items-center gap-2 text-xs font-mono">
+                        <span className={`px-2 py-1 rounded border ${shellConnected ? 'text-green-300 border-green-700/50 bg-green-900/20' : 'text-red-300 border-red-700/50 bg-red-900/20'}`}>
+                            {shellConnected ? 'connected' : 'disconnected'}
+                        </span>
+                        <span className={`px-2 py-1 rounded border ${shellReady ? 'text-blue-300 border-blue-700/50 bg-blue-900/20' : 'text-gray-300 border-gray-700/50 bg-gray-900/20'}`}>
+                            {shellReady ? `shell ready${shellPid ? `:${shellPid}` : ''}` : 'shell not ready'}
+                        </span>
                     </div>
                 </div>
-                <form onSubmit={runShellCommand} className="p-4 border-b border-gray-800 bg-black/20">
-                    <div className="flex flex-col md:flex-row gap-2">
-                        <input
-                            type="text"
-                            value={shellCommand}
-                            onChange={(e) => setShellCommand(e.target.value)}
-                            placeholder="Run command in backend container (e.g. ip route)"
-                            className="flex-1 bg-[#111827] border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 font-mono focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
+                <div className="px-4 py-2 border-b border-gray-800 bg-black/20">
+                    <div className="flex flex-wrap gap-2">
                         <button
-                            type="submit"
-                            disabled={shellRunning}
-                            className="h-10 px-4 bg-primary hover:bg-[#00796B] disabled:opacity-60 text-white rounded text-sm font-semibold flex items-center justify-center"
+                            type="button"
+                            onClick={focusTerminal}
+                            disabled={!shellConnected || !shellReady}
+                            className="h-8 px-3 bg-primary hover:bg-[#00796B] disabled:opacity-60 text-white rounded text-xs font-semibold flex items-center justify-center transition-colors"
                         >
-                            <Play className={`w-4 h-4 mr-1.5 ${shellRunning ? 'animate-pulse' : ''}`} />
-                            {shellRunning ? 'Running...' : 'Run'}
+                            <Play className="w-3.5 h-3.5 mr-1" />
+                            Focus Terminal
                         </button>
                         <button
                             type="button"
-                            onClick={() => {
-                                setShellOutput('');
-                                setShellError('');
-                                setShellExitCode(null);
-                                setShellTimedOut(false);
-                            }}
-                            className="h-10 px-4 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm font-semibold flex items-center justify-center"
+                            onClick={stopShellCommand}
+                            disabled={!shellConnected || !shellReady}
+                            className="h-8 px-3 bg-amber-600 hover:bg-amber-500 disabled:opacity-60 text-white rounded text-xs font-semibold flex items-center justify-center transition-colors"
                         >
-                            <Trash2 className="w-4 h-4 mr-1.5" />
+                            <Square className="w-3.5 h-3.5 mr-1" />
+                            Ctrl+C
+                        </button>
+                        <button
+                            type="button"
+                            onClick={clearTerminal}
+                            className="h-8 px-3 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs font-semibold flex items-center justify-center transition-colors"
+                        >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
                             Clear
                         </button>
                     </div>
-                </form>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-0">
-                    <div className="border-r border-gray-800">
-                        <div className="px-4 py-2 text-xs uppercase tracking-wider text-gray-400 bg-black/30 border-b border-gray-800">STDOUT</div>
-                        <pre className="p-4 text-xs text-green-200 whitespace-pre-wrap overflow-auto max-h-[320px]">{shellOutput || '(no output)'}</pre>
-                    </div>
-                    <div>
-                        <div className="px-4 py-2 text-xs uppercase tracking-wider text-gray-400 bg-black/30 border-b border-gray-800">STDERR</div>
-                        <pre className="p-4 text-xs text-red-200 whitespace-pre-wrap overflow-auto max-h-[320px]">{shellError || '(no error output)'}</pre>
-                    </div>
                 </div>
+                <div
+                    ref={xtermContainerRef}
+                    className="w-full"
+                    style={{ height: '420px', padding: '8px' }}
+                    onClick={focusTerminal}
+                />
             </div>
         </div>
     );

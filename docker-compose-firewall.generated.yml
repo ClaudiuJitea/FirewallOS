@@ -1,0 +1,15 @@
+services:
+  backend:
+    networks:
+      lan2:
+        interface_name: eth2
+        gw_priority: 0
+
+networks:
+  lan2:
+    name: firewall_lan2
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.1.0/24
+          gateway: 10.0.1.254

@@ -7,6 +7,7 @@ exports.setupWebSocket = setupWebSocket;
 const child_process_1 = require("child_process");
 const ws_1 = require("ws");
 const ipaddr_js_1 = __importDefault(require("ipaddr.js"));
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = require("../db");
 const network_1 = require("../network");
 let captureProc = null;
@@ -301,8 +302,8 @@ function startCapture() {
     });
 }
 function setupWebSocket(server) {
-    const wss = new ws_1.WebSocketServer({ server, path: '/api/logs' });
-    wss.on('connection', (ws) => {
+    const logsWss = new ws_1.WebSocketServer({ noServer: true });
+    logsWss.on('connection', (ws) => {
         clients.add(ws);
         if (clients.size === 1)
             startCapture();
@@ -313,5 +314,139 @@ function setupWebSocket(server) {
                 stopCapture();
             console.log('Client disconnected from live log stream');
         });
+    });
+    const shellWss = new ws_1.WebSocketServer({ noServer: true });
+    shellWss.on('connection', (ws, req) => {
+        const JWT_SECRET = process.env.JWT_SECRET || 'supersecretfirewallkey';
+        const url = new URL(req.url || '/api/shell', 'http://localhost');
+        const token = (url.searchParams.get('token') || '').trim();
+        if (!token) {
+            ws.close(1008, 'Missing token');
+            return;
+        }
+        try {
+            jsonwebtoken_1.default.verify(token, JWT_SECRET);
+        }
+        catch {
+            ws.close(1008, 'Invalid token');
+            return;
+        }
+        let proc = null;
+        let procGroupId = null;
+        const send = (payload) => {
+            if (ws.readyState === ws_1.WebSocket.OPEN) {
+                ws.send(JSON.stringify(payload));
+            }
+        };
+        const stopProc = (signal = 'SIGTERM') => {
+            if (!proc)
+                return;
+            try {
+                // Send to whole process group so foreground children (e.g. ping) receive the signal.
+                if (procGroupId) {
+                    process.kill(-procGroupId, signal);
+                }
+                else {
+                    proc.kill(signal);
+                }
+            }
+            catch {
+                // no-op
+            }
+        };
+        proc = (0, child_process_1.spawn)('/bin/bash', ['--noprofile', '--norc'], {
+            detached: true,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: {
+                ...process.env,
+                TERM: 'xterm-256color',
+                PS1: '$ ',
+            },
+        });
+        const current = proc;
+        procGroupId = current.pid ?? null;
+        send({ type: 'ready', pid: current.pid ?? null });
+        current.stdout.on('data', (chunk) => {
+            send({ type: 'output', stream: 'stdout', data: chunk.toString('utf-8') });
+        });
+        current.stderr.on('data', (chunk) => {
+            send({ type: 'output', stream: 'stderr', data: chunk.toString('utf-8') });
+        });
+        current.on('error', (err) => {
+            send({ type: 'error', message: err.message });
+        });
+        current.on('close', (code, signal) => {
+            if (proc === current)
+                proc = null;
+            procGroupId = null;
+            send({ type: 'exit', code, signal });
+            if (ws.readyState === ws_1.WebSocket.OPEN) {
+                ws.close(1000, 'Shell exited');
+            }
+        });
+        ws.on('message', (raw) => {
+            let msg;
+            try {
+                msg = JSON.parse(raw.toString('utf-8'));
+            }
+            catch {
+                send({ type: 'error', message: 'Invalid message format' });
+                return;
+            }
+            const action = String(msg?.action || '').toLowerCase();
+            if (!proc) {
+                send({ type: 'error', message: 'Shell process is not running' });
+                return;
+            }
+            if (action === 'signal') {
+                const signal = String(msg?.signal || 'SIGINT').toUpperCase();
+                if (signal === 'SIGINT')
+                    stopProc('SIGINT');
+                else if (signal === 'SIGTERM')
+                    stopProc('SIGTERM');
+                else
+                    send({ type: 'error', message: 'Unsupported signal' });
+                return;
+            }
+            if (action === 'input') {
+                const data = String(msg?.data || '');
+                if (!data)
+                    return;
+                if (data.length > 2000) {
+                    send({ type: 'error', message: 'Input too long (max 2000 chars)' });
+                    return;
+                }
+                proc.stdin.write(data);
+                return;
+            }
+            send({ type: 'error', message: 'Unsupported action' });
+        });
+        ws.on('close', () => {
+            stopProc('SIGTERM');
+        });
+    });
+    server.on('upgrade', (req, socket, head) => {
+        let pathname = '';
+        try {
+            const url = new URL(req.url || '/', 'http://localhost');
+            pathname = url.pathname;
+        }
+        catch {
+            socket.destroy();
+            return;
+        }
+        if (pathname === '/api/logs') {
+            logsWss.handleUpgrade(req, socket, head, (ws) => {
+                logsWss.emit('connection', ws, req);
+            });
+            return;
+        }
+        if (pathname === '/api/shell') {
+            shellWss.handleUpgrade(req, socket, head, (ws) => {
+                shellWss.emit('connection', ws, req);
+            });
+            return;
+        }
+        socket.destroy();
     });
 }
