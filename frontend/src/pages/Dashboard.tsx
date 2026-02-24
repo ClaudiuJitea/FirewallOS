@@ -67,7 +67,14 @@ export const Dashboard = () => {
   ]), [metrics]);
 
   const chartData = metrics?.trafficHistory ?? [];
-  const topConnections = metrics?.topConnections ?? [];
+  const topConnections = useMemo(
+    () =>
+      (metrics?.topConnections ?? []).map((conn) => ({
+        ...conn,
+        ip: conn.ip.startsWith('::ffff:') ? conn.ip.slice(7) : conn.ip,
+      })),
+    [metrics?.topConnections]
+  );
 
   return (
     <div className="space-y-6">
@@ -115,7 +122,7 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 self-start">
           <h3 className="text-lg font-semibold text-gray-800 mb-6">Top Connections</h3>
           <div className="space-y-4">
             {topConnections.map((conn, i) => (
