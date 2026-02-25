@@ -8,6 +8,9 @@ services:
     cap_add:
       - NET_ADMIN
       - NET_RAW
+    environment:
+      AUTO_DHCP_RENEW: "1"
+      DHCP_INTERFACE: "eth0"
     stdin_open: true
     tty: true
     command: [ "/opt/fw-tests/entrypoint.sh" ]
