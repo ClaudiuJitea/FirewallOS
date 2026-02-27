@@ -69,12 +69,19 @@ generate_compose_override() {
     local idx lan_id subnet gateway
 
     {
+        echo "PRIMARY_LAN_SUBNET=${PRIMARY_LAN_SUBNET}"
+        echo "PRIMARY_LAN_GATEWAY=$(gateway_from_subnet_24 "$PRIMARY_LAN_SUBNET")"
+        for ((idx=0; idx<extra_count; idx++)); do
+            lan_id=$((idx + 2))
+            echo "LAN${lan_id}_SUBNET=${EXTRA_LAN_SUBNETS[$idx]}"
+            echo "LAN${lan_id}_GATEWAY=$(gateway_from_subnet_24 "${EXTRA_LAN_SUBNETS[$idx]}")"
+        done
+    } > ".env"
+
+    {
         echo "services:"
         echo "  backend:"
         echo "    networks:"
-        echo "      lan:"
-        echo "        interface_name: eth1"
-        echo "        gw_priority: 0"
         for ((idx=0; idx<extra_count; idx++)); do
             lan_id=$((idx + 2))
             echo "      lan${lan_id}:"
@@ -83,25 +90,15 @@ generate_compose_override() {
         done
         echo ""
         echo "networks:"
-        gateway="$(gateway_from_subnet_24 "$PRIMARY_LAN_SUBNET")"
-        echo "  lan:"
-        echo "    name: firewall_lan"
-        echo "    driver: bridge"
-        echo "    ipam:"
-        echo "      config:"
-        echo "        - subnet: ${PRIMARY_LAN_SUBNET}"
-        echo "          gateway: ${gateway}"
         for ((idx=0; idx<extra_count; idx++)); do
             lan_id=$((idx + 2))
-            subnet="${EXTRA_LAN_SUBNETS[$idx]}"
-            gateway="$(gateway_from_subnet_24 "$subnet")"
             echo "  lan${lan_id}:"
             echo "    name: firewall_lan${lan_id}"
             echo "    driver: bridge"
             echo "    ipam:"
             echo "      config:"
-            echo "        - subnet: ${subnet}"
-            echo "          gateway: ${gateway}"
+            echo "        - subnet: \${LAN${lan_id}_SUBNET:-10.0.$((idx+1)).0/24}"
+            echo "          gateway: \${LAN${lan_id}_GATEWAY:-10.0.$((idx+1)).254}"
         done
     } > "$GENERATED_COMPOSE_FILE"
 
@@ -224,8 +221,8 @@ execute_action() {
             "${COMPOSE_ARGS[@]}" logs -f frontend backend
             ;;
         "down")
-            echo -e "${RED}Tearing down containers and networks...${NC}"
-            "${COMPOSE_ARGS[@]}" down --remove-orphans
+            echo -e "${RED}Tearing down containers, networks and volumes...${NC}"
+            "${COMPOSE_ARGS[@]}" down -v --remove-orphans
             ;;
         "shell-frontend")
             echo -e "${GREEN}Opening shell in frontend container...${NC}"

@@ -107,9 +107,9 @@ During `deploy` in interactive mode, `firewall.sh` can:
 - Set LAN1 subnet (validated `/24`, default `10.0.0.0/24`)
 - Add `LAN2..LAN9` (up to 8 extra LAN segments)
 - Validate subnets are unique and correctly formatted
-- Generate `docker-compose-firewall.generated.yml` automatically
+- Generate `.env` and `docker-compose-firewall.generated.yml` automatically
 
-Generated LAN gateways are set to `.254` of each `/24` subnet.
+The generated files use environment variable references (e.g. `${LAN2_SUBNET:-10.0.1.0/24}`) to define the Docker bridge networks, ensuring the topology remains flexible. Generated LAN gateways are set to `.254` of each `/24` subnet.
 
 ### Client Stack (testing environment)
 

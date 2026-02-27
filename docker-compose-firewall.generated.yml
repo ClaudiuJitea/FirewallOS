@@ -11,5 +11,5 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 10.0.1.0/24
-          gateway: 10.0.1.254
+        - subnet: ${LAN2_SUBNET:-10.0.1.0/24}
+          gateway: ${LAN2_GATEWAY:-10.0.1.254}
