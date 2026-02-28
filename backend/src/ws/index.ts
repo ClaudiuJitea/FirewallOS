@@ -278,13 +278,42 @@ async function buildTrafficLog(packet: Packet): Promise<TrafficLog> {
   };
 }
 
-function broadcast(log: TrafficLog): void {
-  const data = JSON.stringify(log);
+/** Pending broadcast queue – flushed at regular intervals. */
+let broadcastQueue: TrafficLog[] = [];
+let broadcastTimer: ReturnType<typeof setInterval> | null = null;
+const BROADCAST_INTERVAL_MS = 150;
+
+function flushBroadcastQueue(): void {
+  if (broadcastQueue.length === 0) return;
+  const batch = broadcastQueue;
+  broadcastQueue = [];
+
+  // Send each log entry as a separate JSON message so the client
+  // parser stays simple (one JSON.parse per message).
   for (const client of clients) {
     if (client.readyState === client.OPEN) {
-      client.send(data);
+      for (const log of batch) {
+        client.send(JSON.stringify(log));
+      }
     }
   }
+}
+
+function startBroadcastTimer(): void {
+  if (broadcastTimer) return;
+  broadcastTimer = setInterval(flushBroadcastQueue, BROADCAST_INTERVAL_MS);
+}
+
+function stopBroadcastTimer(): void {
+  if (broadcastTimer) {
+    clearInterval(broadcastTimer);
+    broadcastTimer = null;
+  }
+  flushBroadcastQueue(); // flush remaining
+}
+
+function broadcast(log: TrafficLog): void {
+  broadcastQueue.push(log);
 }
 
 function stopCapture(): void {
@@ -292,16 +321,19 @@ function stopCapture(): void {
   captureProc.kill('SIGTERM');
   captureProc = null;
   captureBuffer = '';
+  stopBroadcastTimer();
 }
 
 function startCapture(): void {
   if (captureProc) return;
 
-  // Capture only packet headers; -l makes output line-buffered for streaming.
-  captureProc = spawn('tcpdump', ['-l', '-n', '-i', 'any'], {
+  // Capture only packet headers (-s 96); -l makes output line-buffered for streaming.
+  captureProc = spawn('tcpdump', ['-l', '-n', '-i', 'any', '-s', '96'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const proc = captureProc;
+
+  startBroadcastTimer();
 
   proc.stdout.on('data', (chunk: Buffer) => {
     captureBuffer += chunk.toString('utf-8');
@@ -325,6 +357,7 @@ function startCapture(): void {
   proc.on('exit', () => {
     captureProc = null;
     captureBuffer = '';
+    stopBroadcastTimer();
     // Auto-restart capture if clients are still connected.
     if (clients.size > 0) startCapture();
   });

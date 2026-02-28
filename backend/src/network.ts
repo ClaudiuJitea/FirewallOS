@@ -38,6 +38,22 @@ function maskToPrefix(mask: string): number {
     return binary.indexOf('0') === -1 ? 32 : binary.indexOf('0');
 }
 
+function prefixToMask(prefix: number): string {
+    if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
+        throw new Error(`Invalid prefix length: ${prefix}`);
+    }
+
+    let remaining = prefix;
+    const octets: number[] = [];
+    for (let i = 0; i < 4; i++) {
+        const bits = Math.max(0, Math.min(8, remaining));
+        const value = bits === 0 ? 0 : (0xff << (8 - bits)) & 0xff;
+        octets.push(value);
+        remaining -= bits;
+    }
+    return octets.join('.');
+}
+
 function hasInterface(iface: string): boolean {
     try {
         execShell(`ip link show dev ${iface}`);
@@ -78,6 +94,24 @@ export async function resolveRuntimeInterface(input: string): Promise<string> {
     if (!name || name.toUpperCase() === 'ANY') return 'ANY';
     const map = await getInterfaceNameMap();
     return map[name] || name;
+}
+
+export function getRuntimeIpv4ByInterface(): Record<string, { ip_address: string; netmask: string }> {
+    const rows = getIpv4InterfaceRows();
+    const map: Record<string, { ip_address: string; netmask: string }> = {};
+
+    for (const row of rows) {
+        const [ip, prefixStr] = row.addr.split('/');
+        const prefix = Number(prefixStr);
+        if (!ip || Number.isNaN(prefix)) continue;
+        try {
+            map[row.iface] = { ip_address: ip, netmask: prefixToMask(prefix) };
+        } catch {
+            // Ignore malformed runtime addresses and continue.
+        }
+    }
+
+    return map;
 }
 
 export async function applyAllInterfaceConfigs(): Promise<void> {

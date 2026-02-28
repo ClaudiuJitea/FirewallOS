@@ -80,7 +80,19 @@ router.get('/available-physical', async (_req, res) => {
 router.get('/', async (req, res) => {
     try {
         const interfaces = await (0, db_1.allQuery)('SELECT * FROM interfaces ORDER BY name ASC');
-        res.json(interfaces);
+        const runtimeIpv4 = (0, network_1.getRuntimeIpv4ByInterface)();
+        const hydrated = interfaces.map((iface) => {
+            const physical = String(iface.physical_interface || '').trim();
+            const fallback = runtimeIpv4[physical];
+            const hasIp = String(iface.ip_address || '').trim().length > 0;
+            const hasNetmask = String(iface.netmask || '').trim().length > 0;
+            return {
+                ...iface,
+                ip_address: hasIp ? iface.ip_address : (fallback?.ip_address || ''),
+                netmask: hasNetmask ? iface.netmask : (fallback?.netmask || ''),
+            };
+        });
+        res.json(hydrated);
     }
     catch (error) {
         res.status(500).json({ error: 'Failed to fetch interfaces' });

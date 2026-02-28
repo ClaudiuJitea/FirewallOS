@@ -1,15 +1,5 @@
 services:
   backend:
     networks:
-      lan2:
-        interface_name: eth2
-        gw_priority: 0
 
 networks:
-  lan2:
-    name: firewall_lan2
-    driver: bridge
-    ipam:
-      config:
-        - subnet: ${LAN2_SUBNET:-10.0.1.0/24}
-          gateway: ${LAN2_GATEWAY:-10.0.1.254}

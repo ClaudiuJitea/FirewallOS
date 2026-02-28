@@ -1,7 +1,7 @@
 import express from 'express';
 import { runQuery, allQuery, getQuery } from '../db';
 import { authenticate } from '../middleware/auth';
-import { applyAllInterfaceConfigs, applyInterfaceConfig } from '../network';
+import { applyAllInterfaceConfigs, applyInterfaceConfig, getRuntimeIpv4ByInterface } from '../network';
 import { execSync } from 'child_process';
 
 const router = express.Router();
@@ -84,7 +84,22 @@ router.get('/available-physical', async (_req, res) => {
 router.get('/', async (req, res) => {
     try {
         const interfaces = await allQuery('SELECT * FROM interfaces ORDER BY name ASC');
-        res.json(interfaces);
+        const runtimeIpv4 = getRuntimeIpv4ByInterface();
+
+        const hydrated = interfaces.map((iface: any) => {
+            const physical = String(iface.physical_interface || '').trim();
+            const fallback = runtimeIpv4[physical];
+            const hasIp = String(iface.ip_address || '').trim().length > 0;
+            const hasNetmask = String(iface.netmask || '').trim().length > 0;
+
+            return {
+                ...iface,
+                ip_address: hasIp ? iface.ip_address : (fallback?.ip_address || ''),
+                netmask: hasNetmask ? iface.netmask : (fallback?.netmask || ''),
+            };
+        });
+
+        res.json(hydrated);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch interfaces' });
     }

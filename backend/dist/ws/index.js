@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -6,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.setupWebSocket = setupWebSocket;
 const child_process_1 = require("child_process");
 const ws_1 = require("ws");
+const pty = __importStar(require("node-pty"));
 const ipaddr_js_1 = __importDefault(require("ipaddr.js"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = require("../db");
@@ -251,13 +285,39 @@ async function buildTrafficLog(packet) {
         country: 'Unknown',
     };
 }
-function broadcast(log) {
-    const data = JSON.stringify(log);
+/** Pending broadcast queue – flushed at regular intervals. */
+let broadcastQueue = [];
+let broadcastTimer = null;
+const BROADCAST_INTERVAL_MS = 150;
+function flushBroadcastQueue() {
+    if (broadcastQueue.length === 0)
+        return;
+    const batch = broadcastQueue;
+    broadcastQueue = [];
+    // Send each log entry as a separate JSON message so the client
+    // parser stays simple (one JSON.parse per message).
     for (const client of clients) {
         if (client.readyState === client.OPEN) {
-            client.send(data);
+            for (const log of batch) {
+                client.send(JSON.stringify(log));
+            }
         }
     }
+}
+function startBroadcastTimer() {
+    if (broadcastTimer)
+        return;
+    broadcastTimer = setInterval(flushBroadcastQueue, BROADCAST_INTERVAL_MS);
+}
+function stopBroadcastTimer() {
+    if (broadcastTimer) {
+        clearInterval(broadcastTimer);
+        broadcastTimer = null;
+    }
+    flushBroadcastQueue(); // flush remaining
+}
+function broadcast(log) {
+    broadcastQueue.push(log);
 }
 function stopCapture() {
     if (!captureProc)
@@ -265,15 +325,17 @@ function stopCapture() {
     captureProc.kill('SIGTERM');
     captureProc = null;
     captureBuffer = '';
+    stopBroadcastTimer();
 }
 function startCapture() {
     if (captureProc)
         return;
-    // Capture only packet headers; -l makes output line-buffered for streaming.
-    captureProc = (0, child_process_1.spawn)('tcpdump', ['-l', '-n', '-i', 'any'], {
+    // Capture only packet headers (-s 96); -l makes output line-buffered for streaming.
+    captureProc = (0, child_process_1.spawn)('tcpdump', ['-l', '-n', '-i', 'any', '-s', '96'], {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
     const proc = captureProc;
+    startBroadcastTimer();
     proc.stdout.on('data', (chunk) => {
         captureBuffer += chunk.toString('utf-8');
         const lines = captureBuffer.split('\n');
@@ -296,6 +358,7 @@ function startCapture() {
     proc.on('exit', () => {
         captureProc = null;
         captureBuffer = '';
+        stopBroadcastTimer();
         // Auto-restart capture if clients are still connected.
         if (clients.size > 0)
             startCapture();
@@ -331,98 +394,90 @@ function setupWebSocket(server) {
             ws.close(1008, 'Invalid token');
             return;
         }
-        let proc = null;
-        let procGroupId = null;
-        const send = (payload) => {
+        // Spawn a real PTY shell session
+        let shell = null;
+        try {
+            shell = pty.spawn('/bin/bash', ['--login'], {
+                name: 'xterm-256color',
+                cols: 120,
+                rows: 30,
+                cwd: '/',
+                env: {
+                    ...process.env,
+                    TERM: 'xterm-256color',
+                },
+            });
+        }
+        catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            ws.send(JSON.stringify({ type: 'error', message: `Failed to spawn shell: ${errMsg}` }));
+            ws.close(1011, 'Shell spawn failed');
+            return;
+        }
+        const currentShell = shell;
+        // Notify the frontend that the shell is ready
+        ws.send(JSON.stringify({ type: 'ready', pid: currentShell.pid }));
+        // Forward PTY output to the WebSocket
+        currentShell.onData((data) => {
             if (ws.readyState === ws_1.WebSocket.OPEN) {
-                ws.send(JSON.stringify(payload));
+                ws.send(JSON.stringify({ type: 'output', data }));
             }
-        };
-        const stopProc = (signal = 'SIGTERM') => {
-            if (!proc)
-                return;
-            try {
-                // Send to whole process group so foreground children (e.g. ping) receive the signal.
-                if (procGroupId) {
-                    process.kill(-procGroupId, signal);
-                }
-                else {
-                    proc.kill(signal);
-                }
-            }
-            catch {
-                // no-op
-            }
-        };
-        proc = (0, child_process_1.spawn)('/bin/bash', ['--noprofile', '--norc'], {
-            detached: true,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            env: {
-                ...process.env,
-                TERM: 'xterm-256color',
-                PS1: '$ ',
-            },
         });
-        const current = proc;
-        procGroupId = current.pid ?? null;
-        send({ type: 'ready', pid: current.pid ?? null });
-        current.stdout.on('data', (chunk) => {
-            send({ type: 'output', stream: 'stdout', data: chunk.toString('utf-8') });
-        });
-        current.stderr.on('data', (chunk) => {
-            send({ type: 'output', stream: 'stderr', data: chunk.toString('utf-8') });
-        });
-        current.on('error', (err) => {
-            send({ type: 'error', message: err.message });
-        });
-        current.on('close', (code, signal) => {
-            if (proc === current)
-                proc = null;
-            procGroupId = null;
-            send({ type: 'exit', code, signal });
+        currentShell.onExit(({ exitCode, signal }) => {
             if (ws.readyState === ws_1.WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'exit', code: exitCode, signal }));
                 ws.close(1000, 'Shell exited');
             }
+            shell = null;
         });
+        // Handle messages from the frontend
         ws.on('message', (raw) => {
             let msg;
             try {
                 msg = JSON.parse(raw.toString('utf-8'));
             }
             catch {
-                send({ type: 'error', message: 'Invalid message format' });
+                // If it's not JSON, treat it as raw terminal input
+                if (shell)
+                    shell.write(raw.toString('utf-8'));
+                return;
+            }
+            if (!shell) {
+                if (ws.readyState === ws_1.WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'error', message: 'Shell process is not running' }));
+                }
                 return;
             }
             const action = String(msg?.action || '').toLowerCase();
-            if (!proc) {
-                send({ type: 'error', message: 'Shell process is not running' });
+            if (action === 'input') {
+                const data = String(msg?.data || '');
+                if (data)
+                    shell.write(data);
+                return;
+            }
+            if (action === 'resize') {
+                const cols = Number(msg?.cols) || 120;
+                const rows = Number(msg?.rows) || 30;
+                shell.resize(cols, rows);
                 return;
             }
             if (action === 'signal') {
                 const signal = String(msg?.signal || 'SIGINT').toUpperCase();
-                if (signal === 'SIGINT')
-                    stopProc('SIGINT');
-                else if (signal === 'SIGTERM')
-                    stopProc('SIGTERM');
-                else
-                    send({ type: 'error', message: 'Unsupported signal' });
-                return;
-            }
-            if (action === 'input') {
-                const data = String(msg?.data || '');
-                if (!data)
-                    return;
-                if (data.length > 2000) {
-                    send({ type: 'error', message: 'Input too long (max 2000 chars)' });
-                    return;
+                if (signal === 'SIGINT') {
+                    // Send Ctrl+C character
+                    shell.write('\x03');
                 }
-                proc.stdin.write(data);
+                else if (signal === 'SIGTERM') {
+                    shell.kill('SIGTERM');
+                }
                 return;
             }
-            send({ type: 'error', message: 'Unsupported action' });
         });
         ws.on('close', () => {
-            stopProc('SIGTERM');
+            if (shell) {
+                shell.kill('SIGTERM');
+                shell = null;
+            }
         });
     });
     server.on('upgrade', (req, socket, head) => {

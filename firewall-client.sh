@@ -62,8 +62,8 @@ execute_action() {
             $compose_cmd logs -f client
             ;;
         "down")
-            echo -e "${RED}Tearing down containers and networks...${NC}"
-            $compose_cmd down --remove-orphans
+            echo -e "${RED}Tearing down containers, networks and images...${NC}"
+            $compose_cmd down --remove-orphans --rmi local
             if docker network inspect firewall_lan &> /dev/null; then
                 local attached_count
                 attached_count=$(docker network inspect firewall_lan -f '{{len .Containers}}' 2>/dev/null || echo 1)

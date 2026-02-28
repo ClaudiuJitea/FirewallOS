@@ -64,6 +64,19 @@ build_compose_args() {
     fi
 }
 
+print_access_url_if_running() {
+    local frontend_container_id is_running
+    frontend_container_id=$("${COMPOSE_ARGS[@]}" ps -q frontend 2>/dev/null || true)
+    if [ -z "$frontend_container_id" ]; then
+        return
+    fi
+
+    is_running=$(docker inspect -f '{{.State.Running}}' "$frontend_container_id" 2>/dev/null || echo "false")
+    if [ "$is_running" = "true" ]; then
+        echo -e "${GREEN}Firewall UI is available at:${NC} ${CYAN}http://localhost${NC}"
+    fi
+}
+
 generate_compose_override() {
     local extra_count="$1"
     local idx lan_id subnet gateway
@@ -199,10 +212,12 @@ execute_action() {
             fi
             echo -e "${GREEN}Deploying and building containers...${NC}"
             "${COMPOSE_ARGS[@]}" up -d --build frontend backend
+            print_access_url_if_running
             ;;
         "start")
             echo -e "${GREEN}Starting containers...${NC}"
             "${COMPOSE_ARGS[@]}" start frontend backend
+            print_access_url_if_running
             ;;
         "stop")
             echo -e "${YELLOW}Stopping containers...${NC}"
@@ -211,18 +226,20 @@ execute_action() {
         "restart")
             echo -e "${GREEN}Restarting containers...${NC}"
             "${COMPOSE_ARGS[@]}" restart frontend backend
+            print_access_url_if_running
             ;;
         "status")
             echo -e "${GREEN}Container Status:${NC}"
             "${COMPOSE_ARGS[@]}" ps frontend backend
+            print_access_url_if_running
             ;;
         "logs")
             echo -e "${GREEN}Showing logs (Ctrl+C to exit):${NC}"
             "${COMPOSE_ARGS[@]}" logs -f frontend backend
             ;;
         "down")
-            echo -e "${RED}Tearing down containers, networks and volumes...${NC}"
-            "${COMPOSE_ARGS[@]}" down -v --remove-orphans
+            echo -e "${RED}Tearing down containers, networks, volumes and images...${NC}"
+            "${COMPOSE_ARGS[@]}" down -v --remove-orphans --rmi local
             ;;
         "shell-frontend")
             echo -e "${GREEN}Opening shell in frontend container...${NC}"
@@ -260,6 +277,9 @@ shell_into_container() {
 interactive_mode() {
     while true; do
         print_header
+        build_compose_args
+        print_access_url_if_running
+        echo -e "${CYAN}----------------------------------------------------${NC}"
         echo -e " ${YELLOW}1.${NC} Deploy (Up + Build)"
         echo -e " ${YELLOW}2.${NC} Start"
         echo -e " ${YELLOW}3.${NC} Stop"

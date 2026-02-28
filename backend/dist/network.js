@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getInterfaceNameMap = getInterfaceNameMap;
 exports.resolveRuntimeInterface = resolveRuntimeInterface;
+exports.getRuntimeIpv4ByInterface = getRuntimeIpv4ByInterface;
 exports.applyAllInterfaceConfigs = applyAllInterfaceConfigs;
 exports.applyInterfaceConfig = applyInterfaceConfig;
 const child_process_1 = require("child_process");
@@ -40,6 +41,20 @@ function maskToPrefix(mask) {
         throw new Error(`Invalid netmask (non-contiguous): ${mask}`);
     }
     return binary.indexOf('0') === -1 ? 32 : binary.indexOf('0');
+}
+function prefixToMask(prefix) {
+    if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
+        throw new Error(`Invalid prefix length: ${prefix}`);
+    }
+    let remaining = prefix;
+    const octets = [];
+    for (let i = 0; i < 4; i++) {
+        const bits = Math.max(0, Math.min(8, remaining));
+        const value = bits === 0 ? 0 : (0xff << (8 - bits)) & 0xff;
+        octets.push(value);
+        remaining -= bits;
+    }
+    return octets.join('.');
 }
 function hasInterface(iface) {
     try {
@@ -82,6 +97,23 @@ async function resolveRuntimeInterface(input) {
         return 'ANY';
     const map = await getInterfaceNameMap();
     return map[name] || name;
+}
+function getRuntimeIpv4ByInterface() {
+    const rows = getIpv4InterfaceRows();
+    const map = {};
+    for (const row of rows) {
+        const [ip, prefixStr] = row.addr.split('/');
+        const prefix = Number(prefixStr);
+        if (!ip || Number.isNaN(prefix))
+            continue;
+        try {
+            map[row.iface] = { ip_address: ip, netmask: prefixToMask(prefix) };
+        }
+        catch {
+            // Ignore malformed runtime addresses and continue.
+        }
+    }
+    return map;
 }
 async function applyAllInterfaceConfigs() {
     const interfaces = await (0, db_1.allQuery)('SELECT * FROM interfaces ORDER BY id ASC');

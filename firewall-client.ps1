@@ -64,8 +64,8 @@ function Invoke-Action {
             docker compose @composeArgs logs -f client
         }
         "down" {
-            Write-Host "Tearing down containers and networks..." -ForegroundColor Red
-            docker compose @composeArgs rm -fsv client
+            Write-Host "Tearing down containers, networks and images..." -ForegroundColor Red
+            docker compose @composeArgs down --remove-orphans --rmi local
         }
         "shell" {
             Write-Host "Opening shell in client container..." -ForegroundColor Green

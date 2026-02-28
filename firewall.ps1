@@ -28,6 +28,22 @@ function Pause-Script {
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
+function Show-AccessUrlIfRunning {
+    param (
+        [string[]]$ComposeArgs
+    )
+
+    $frontendContainerId = (docker compose @ComposeArgs ps -q frontend 2>$null).Trim()
+    if ([string]::IsNullOrWhiteSpace($frontendContainerId)) {
+        return
+    }
+
+    $isRunning = (docker inspect -f '{{.State.Running}}' $frontendContainerId 2>$null).Trim()
+    if ($isRunning -eq "true") {
+        Write-Host "Firewall UI is available at: http://localhost" -ForegroundColor Cyan
+    }
+}
+
 function Invoke-Action {
     param (
         [string]$Action
@@ -42,10 +58,12 @@ function Invoke-Action {
         "deploy" {
             Write-Host "Deploying and building containers..." -ForegroundColor Green
             docker compose @composeArgs up -d --build frontend backend
+            Show-AccessUrlIfRunning -ComposeArgs $composeArgs
         }
         "start" {
             Write-Host "Starting containers..." -ForegroundColor Green
             docker compose @composeArgs start frontend backend
+            Show-AccessUrlIfRunning -ComposeArgs $composeArgs
         }
         "stop" {
             Write-Host "Stopping containers..." -ForegroundColor Yellow
@@ -54,18 +72,20 @@ function Invoke-Action {
         "restart" {
             Write-Host "Restarting containers..." -ForegroundColor Green
             docker compose @composeArgs restart frontend backend
+            Show-AccessUrlIfRunning -ComposeArgs $composeArgs
         }
         "status" {
             Write-Host "Container Status:" -ForegroundColor Green
             docker compose @composeArgs ps frontend backend
+            Show-AccessUrlIfRunning -ComposeArgs $composeArgs
         }
         "logs" {
             Write-Host "Showing logs (Ctrl+C to exit):" -ForegroundColor Green
             docker compose @composeArgs logs -f frontend backend
         }
         "down" {
-            Write-Host "Tearing down containers and networks..." -ForegroundColor Red
-            docker compose @composeArgs rm -fsv frontend backend
+            Write-Host "Tearing down containers, networks, volumes and images..." -ForegroundColor Red
+            docker compose @composeArgs down -v --remove-orphans --rmi local
         }
         "shell-frontend" {
             Write-Host "Opening shell in frontend container..." -ForegroundColor Green
@@ -106,6 +126,8 @@ function Show-ShellMenu {
 function Show-InteractiveMenu {
     while ($true) {
         Show-Header
+        Show-AccessUrlIfRunning -ComposeArgs @("-f", "docker-compose-firewall.yml")
+        Write-Host "----------------------------------------------------" -ForegroundColor Cyan
         Write-Host " 1. Deploy (Up + Build)" -ForegroundColor Yellow
         Write-Host " 2. Start" -ForegroundColor Yellow
         Write-Host " 3. Stop" -ForegroundColor Yellow
