@@ -2,6 +2,8 @@ import { execSync } from 'child_process';
 import { allQuery, runQuery } from './db';
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
+import net from 'net';
 import { getInterfaceNameMap } from './network';
 
 const DNSMASQ_CONF_DIR = '/etc/dnsmasq.d';
@@ -16,6 +18,7 @@ type PendingDnsQuery = {
 };
 
 const pendingDnsQueriesByDomain = new Map<string, PendingDnsQuery[]>();
+const geoIpCache = new Map<string, { countryCode: string; latitude: number | null; longitude: number | null }>();
 
 /**
  * Execute a shell command. Returns stdout. Throws on failure.
@@ -248,10 +251,81 @@ async function appendDnsLog(domain: string, resolvedIp: string, action: 'ALLOW' 
     const d = normalizeDomain(domain);
     const ip = String(resolvedIp || '').trim();
     if (!d) return;
+    const geo = await resolveGeoForDnsLog(d, ip);
     await runQuery(
         'INSERT INTO dns_logs (domain, ip_address, country_code, latitude, longitude, action) VALUES (?, ?, ?, ?, ?, ?)',
-        [d, ip || '0.0.0.0', 'Unknown', null, null, action]
+        [d, ip || '0.0.0.0', geo.countryCode, geo.latitude, geo.longitude, action]
     );
+}
+
+function inferCountryFromDomain(domain: string): string {
+    const normalized = normalizeDomain(domain);
+    if (!normalized) return 'Unknown';
+    const labels = normalized.split('.').filter(Boolean);
+    if (labels.length === 0) return 'Unknown';
+    const tld = labels[labels.length - 1];
+    if (/^[a-z]{2}$/.test(tld)) return tld.toUpperCase();
+    return 'Unknown';
+}
+
+function isPublicIpv4(ip: string): boolean {
+    if (net.isIP(ip) !== 4) return false;
+    const parts = ip.split('.').map((x) => Number(x));
+    if (parts.length !== 4 || parts.some((x) => Number.isNaN(x) || x < 0 || x > 255)) return false;
+    const [a, b] = parts;
+
+    // RFC1918 / loopback / link-local / CGNAT / multicast / reserved ranges.
+    if (a === 10) return false;
+    if (a === 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    if (a >= 224) return false;
+    if (ip === '0.0.0.0') return false;
+    return true;
+}
+
+function fetchGeoIp(ip: string): Promise<{ countryCode: string; latitude: number | null; longitude: number | null }> {
+    return new Promise((resolve) => {
+        const req = http.get(`http://ip-api.com/json/${ip}`, (res) => {
+            let data = '';
+            res.on('data', (chunk) => { data += chunk; });
+            res.on('end', () => {
+                try {
+                    const parsed = JSON.parse(data);
+                    resolve({
+                        countryCode: String(parsed.countryCode || 'Unknown'),
+                        latitude: typeof parsed.lat === 'number' ? parsed.lat : null,
+                        longitude: typeof parsed.lon === 'number' ? parsed.lon : null,
+                    });
+                } catch {
+                    resolve({ countryCode: 'Unknown', latitude: null, longitude: null });
+                }
+            });
+        });
+        req.on('error', () => resolve({ countryCode: 'Unknown', latitude: null, longitude: null }));
+        req.setTimeout(3000, () => {
+            req.destroy();
+            resolve({ countryCode: 'Unknown', latitude: null, longitude: null });
+        });
+    });
+}
+
+async function resolveGeoForDnsLog(domain: string, ip: string): Promise<{ countryCode: string; latitude: number | null; longitude: number | null }> {
+    if (isPublicIpv4(ip)) {
+        const cached = geoIpCache.get(ip);
+        if (cached) return cached;
+        const geo = await fetchGeoIp(ip);
+        geoIpCache.set(ip, geo);
+        return geo;
+    }
+
+    return {
+        countryCode: inferCountryFromDomain(domain),
+        latitude: null,
+        longitude: null,
+    };
 }
 
 function parseDnsmasqLine(line: string): { domain: string; ip: string; action: 'ALLOW' | 'BLOCK' } | null {
