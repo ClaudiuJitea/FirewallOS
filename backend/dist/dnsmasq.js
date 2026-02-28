@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.initDnsmasq = initDnsmasq;
 exports.applyDnsRules = applyDnsRules;
 exports.getDnsmasqStatus = getDnsmasqStatus;
+exports.syncDnsQueryLogsFromDnsmasq = syncDnsQueryLogsFromDnsmasq;
 exports.applyDhcpConfig = applyDhcpConfig;
 exports.getDhcpLeases = getDhcpLeases;
 const child_process_1 = require("child_process");
@@ -16,6 +17,9 @@ const network_1 = require("./network");
 const DNSMASQ_CONF_DIR = '/etc/dnsmasq.d';
 const DNSMASQ_CONF_FILE = path_1.default.join(DNSMASQ_CONF_DIR, 'firewall_mgr.conf');
 const DNSMASQ_BASE_CONF = '/etc/dnsmasq.conf';
+const DNSMASQ_LOG_FILE = '/var/log/dnsmasq.log';
+let dnsmasqLogOffset = 0;
+const pendingDnsQueriesByDomain = new Map();
 /**
  * Execute a shell command. Returns stdout. Throws on failure.
  */
@@ -103,6 +107,7 @@ async function applyDnsRules() {
     try {
         console.log('[dnsmasq] Applying DNS rules from database...');
         const rules = await (0, db_1.allQuery)('SELECT * FROM dns_rules WHERE status = 1');
+        const countryRules = await (0, db_1.allQuery)("SELECT * FROM country_rules WHERE status = 1 AND action = 'BLOCK'");
         const configLines = [
             '# Firewall Manager DNS rules',
             `# Generated at ${new Date().toISOString()}`,
@@ -145,25 +150,37 @@ async function applyDnsRules() {
                 }
             }
         }
+        // Country rules are mapped to ccTLD blocks (e.g. RO -> .ro).
+        // This is a pragmatic DNS-only approximation, not full Geo-IP blocking.
+        const seenTlds = new Set();
+        for (const countryRule of countryRules) {
+            const code = String(countryRule.country_code || '').trim().toLowerCase();
+            if (!/^[a-z]{2}$/.test(code))
+                continue;
+            if (seenTlds.has(code))
+                continue;
+            seenTlds.add(code);
+            configLines.push(`# Country BLOCK (${code.toUpperCase()}) via ccTLD`);
+            configLines.push(`address=/${code}/0.0.0.0`);
+            configLines.push(`address=/${code}/::`);
+        }
         configLines.push('');
         // Write config file
         fs_1.default.writeFileSync(DNSMASQ_CONF_FILE, configLines.join('\n'), 'utf-8');
-        // Reload dnsmasq (SIGHUP causes config reload)
+        // Restart dnsmasq to make sure cached previous answers are dropped.
+        // A simple SIGHUP can keep old cache entries and make new block rules
+        // look ineffective until TTL expires.
         try {
-            execShell('pkill -HUP dnsmasq');
-            console.log(`[dnsmasq] Reloaded with ${rules.length} DNS rules.`);
-        }
-        catch {
-            // dnsmasq might not be running, try to start it
-            console.warn('[dnsmasq] SIGHUP failed, attempting restart...');
             try {
-                execShell('dnsmasq');
-                console.log('[dnsmasq] Restarted successfully.');
+                execShell('pkill -x dnsmasq');
             }
-            catch (err) {
-                console.error('[dnsmasq] Failed to restart:', err.message);
-                return { success: false, error: 'Failed to restart dnsmasq' };
-            }
+            catch { }
+            execShell('dnsmasq');
+            console.log(`[dnsmasq] Restarted with ${rules.length} DNS rules and ${countryRules.length} country-derived rules.`);
+        }
+        catch (err) {
+            console.error('[dnsmasq] Failed to restart:', err.message);
+            return { success: false, error: 'Failed to restart dnsmasq' };
         }
         return { success: true };
     }
@@ -202,6 +219,95 @@ function getDnsmasqStatus() {
         logTail = '(no log file)';
     }
     return { running, config, logTail };
+}
+function normalizeDomain(value) {
+    return String(value || '').trim().toLowerCase().replace(/\.$/, '');
+}
+function enqueuePendingQuery(domain, clientIp) {
+    const d = normalizeDomain(domain);
+    if (!d)
+        return;
+    const q = pendingDnsQueriesByDomain.get(d) || [];
+    q.push({ domain: d, clientIp: String(clientIp || '').trim() });
+    if (q.length > 200)
+        q.splice(0, q.length - 200);
+    pendingDnsQueriesByDomain.set(d, q);
+}
+function dequeuePendingQuery(domain) {
+    const d = normalizeDomain(domain);
+    if (!d)
+        return undefined;
+    const q = pendingDnsQueriesByDomain.get(d);
+    if (!q || q.length === 0)
+        return undefined;
+    const item = q.shift();
+    if (q.length === 0)
+        pendingDnsQueriesByDomain.delete(d);
+    return item;
+}
+async function appendDnsLog(domain, resolvedIp, action) {
+    const d = normalizeDomain(domain);
+    const ip = String(resolvedIp || '').trim();
+    if (!d)
+        return;
+    await (0, db_1.runQuery)('INSERT INTO dns_logs (domain, ip_address, country_code, latitude, longitude, action) VALUES (?, ?, ?, ?, ?, ?)', [d, ip || '0.0.0.0', 'Unknown', null, null, action]);
+}
+function parseDnsmasqLine(line) {
+    const queryMatch = line.match(/\bquery\[[A-Z0-9]+\]\s+(\S+)\s+from\s+(\S+)/i);
+    if (queryMatch) {
+        enqueuePendingQuery(queryMatch[1], queryMatch[2]);
+        return null;
+    }
+    const blockedMatch = line.match(/\b(config|address)\s+(\S+)\s+is\s+(0\.0\.0\.0|::)\b/i);
+    if (blockedMatch) {
+        const domain = blockedMatch[2];
+        dequeuePendingQuery(domain);
+        return { domain, ip: blockedMatch[3], action: 'BLOCK' };
+    }
+    const replyMatch = line.match(/\breply\s+(\S+)\s+is\s+(\S+)/i);
+    if (replyMatch) {
+        const domain = replyMatch[1];
+        const ip = replyMatch[2];
+        dequeuePendingQuery(domain);
+        if (ip === '0.0.0.0' || ip === '::') {
+            return { domain, ip, action: 'BLOCK' };
+        }
+        return { domain, ip, action: 'ALLOW' };
+    }
+    return null;
+}
+async function syncDnsQueryLogsFromDnsmasq() {
+    try {
+        if (!fs_1.default.existsSync(DNSMASQ_LOG_FILE))
+            return;
+        const stat = fs_1.default.statSync(DNSMASQ_LOG_FILE);
+        if (stat.size < dnsmasqLogOffset) {
+            // Log rotated/truncated.
+            dnsmasqLogOffset = 0;
+        }
+        if (stat.size === dnsmasqLogOffset)
+            return;
+        const fd = fs_1.default.openSync(DNSMASQ_LOG_FILE, 'r');
+        try {
+            const length = stat.size - dnsmasqLogOffset;
+            const buf = Buffer.alloc(length);
+            fs_1.default.readSync(fd, buf, 0, length, dnsmasqLogOffset);
+            dnsmasqLogOffset = stat.size;
+            const lines = buf.toString('utf-8').split('\n').map((x) => x.trim()).filter(Boolean);
+            for (const line of lines) {
+                const parsed = parseDnsmasqLine(line);
+                if (!parsed)
+                    continue;
+                await appendDnsLog(parsed.domain, parsed.ip, parsed.action);
+            }
+        }
+        finally {
+            fs_1.default.closeSync(fd);
+        }
+    }
+    catch (err) {
+        console.warn('[dnsmasq] Failed to sync query logs:', err.message);
+    }
 }
 // ==================== DHCP ====================
 const DHCP_CONF_FILE = path_1.default.join(DNSMASQ_CONF_DIR, 'dhcp.conf');
@@ -247,12 +353,15 @@ async function applyDhcpConfig() {
                 }
             }
             // DNS servers (option 6)
-            if (pool.dns_servers) {
+            // If unset, default to the pool gateway (FirewallOS DNS) so filtering works by default.
+            const configuredDns = String(pool.dns_servers || '').trim();
+            const effectiveDns = configuredDns || String(pool.gateway || '').trim();
+            if (effectiveDns) {
                 if (resolvedIface && resolvedIface !== 'ANY') {
-                    configLines.push(`dhcp-option=interface:${resolvedIface},6,${pool.dns_servers}`);
+                    configLines.push(`dhcp-option=interface:${resolvedIface},6,${effectiveDns}`);
                 }
                 else {
-                    configLines.push(`dhcp-option=6,${pool.dns_servers}`);
+                    configLines.push(`dhcp-option=6,${effectiveDns}`);
                 }
             }
             // Domain (option 15)

@@ -22,7 +22,7 @@ router.post('/pools', async (req, res) => {
     try {
         const info = await runQuery(
             'INSERT INTO dhcp_pools (interface, range_start, range_end, subnet_mask, gateway, dns_servers, lease_time, domain, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '8.8.8.8,8.8.4.4', lease_time || 86400, domain || '', status === false ? 0 : 1]
+            [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '', lease_time || 86400, domain || '', status === false ? 0 : 1]
         );
         res.json({ id: info.lastInsertRowid });
         applyDhcpConfig().catch(err => console.error('[dhcp] Sync after pool create failed:', err));
@@ -36,7 +36,7 @@ router.put('/pools/:id', async (req, res) => {
     try {
         await runQuery(
             'UPDATE dhcp_pools SET interface=?, range_start=?, range_end=?, subnet_mask=?, gateway=?, dns_servers=?, lease_time=?, domain=?, status=? WHERE id=?',
-            [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '8.8.8.8,8.8.4.4', lease_time || 86400, domain || '', status === false ? 0 : 1, req.params.id]
+            [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '', lease_time || 86400, domain || '', status === false ? 0 : 1, req.params.id]
         );
         res.json({ success: true });
         applyDhcpConfig().catch(err => console.error('[dhcp] Sync after pool update failed:', err));

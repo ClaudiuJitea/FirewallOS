@@ -19,7 +19,7 @@ router.get('/pools', async (req, res) => {
 router.post('/pools', async (req, res) => {
     const { interface: iface, range_start, range_end, subnet_mask, gateway, dns_servers, lease_time, domain, status } = req.body;
     try {
-        const info = await (0, db_1.runQuery)('INSERT INTO dhcp_pools (interface, range_start, range_end, subnet_mask, gateway, dns_servers, lease_time, domain, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '8.8.8.8,8.8.4.4', lease_time || 86400, domain || '', status === false ? 0 : 1]);
+        const info = await (0, db_1.runQuery)('INSERT INTO dhcp_pools (interface, range_start, range_end, subnet_mask, gateway, dns_servers, lease_time, domain, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '', lease_time || 86400, domain || '', status === false ? 0 : 1]);
         res.json({ id: info.lastInsertRowid });
         (0, dnsmasq_1.applyDhcpConfig)().catch(err => console.error('[dhcp] Sync after pool create failed:', err));
     }
@@ -30,7 +30,7 @@ router.post('/pools', async (req, res) => {
 router.put('/pools/:id', async (req, res) => {
     const { interface: iface, range_start, range_end, subnet_mask, gateway, dns_servers, lease_time, domain, status } = req.body;
     try {
-        await (0, db_1.runQuery)('UPDATE dhcp_pools SET interface=?, range_start=?, range_end=?, subnet_mask=?, gateway=?, dns_servers=?, lease_time=?, domain=?, status=? WHERE id=?', [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '8.8.8.8,8.8.4.4', lease_time || 86400, domain || '', status === false ? 0 : 1, req.params.id]);
+        await (0, db_1.runQuery)('UPDATE dhcp_pools SET interface=?, range_start=?, range_end=?, subnet_mask=?, gateway=?, dns_servers=?, lease_time=?, domain=?, status=? WHERE id=?', [iface, range_start, range_end, subnet_mask || '255.255.255.0', gateway, dns_servers || '', lease_time || 86400, domain || '', status === false ? 0 : 1, req.params.id]);
         res.json({ success: true });
         (0, dnsmasq_1.applyDhcpConfig)().catch(err => console.error('[dhcp] Sync after pool update failed:', err));
     }

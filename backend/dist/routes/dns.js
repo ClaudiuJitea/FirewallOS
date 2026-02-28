@@ -70,6 +70,7 @@ router.post('/country-rules', async (req, res) => {
     try {
         const result = await (0, db_1.runQuery)('INSERT INTO country_rules (country_code, action, status) VALUES (?, ?, ?)', [country_code, action, status ?? 1]);
         res.status(201).json({ id: result.lastInsertRowid });
+        (0, dnsmasq_1.applyDnsRules)().catch(err => console.error('[dnsmasq] Sync after country rule create failed:', err));
     }
     catch (error) {
         res.status(500).json({ error: 'Failed to create country rule' });
@@ -81,6 +82,7 @@ router.put('/country-rules/:id', async (req, res) => {
     try {
         await (0, db_1.runQuery)('UPDATE country_rules SET country_code = ?, action = ?, status = ? WHERE id = ?', [country_code, action, status === false ? 0 : 1, id]);
         res.json({ success: true });
+        (0, dnsmasq_1.applyDnsRules)().catch(err => console.error('[dnsmasq] Sync after country rule update failed:', err));
     }
     catch (error) {
         res.status(500).json({ error: 'Failed to update country rule' });
@@ -91,6 +93,7 @@ router.delete('/country-rules/:id', async (req, res) => {
     try {
         await (0, db_1.runQuery)('DELETE FROM country_rules WHERE id = ?', [id]);
         res.json({ success: true });
+        (0, dnsmasq_1.applyDnsRules)().catch(err => console.error('[dnsmasq] Sync after country rule delete failed:', err));
     }
     catch (error) {
         res.status(500).json({ error: 'Failed to delete country rule' });
@@ -99,6 +102,10 @@ router.delete('/country-rules/:id', async (req, res) => {
 // 3. Fetch DNS Logs
 router.get('/logs', async (req, res) => {
     try {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        await (0, dnsmasq_1.syncDnsQueryLogsFromDnsmasq)();
         const logs = await (0, db_1.allQuery)('SELECT * FROM dns_logs ORDER BY id DESC LIMIT 100');
         res.json(logs);
     }

@@ -50,7 +50,7 @@ export const DHCP = () => {
     const [rangeEnd, setRangeEnd] = useState('');
     const [subnetMask, setSubnetMask] = useState('255.255.255.0');
     const [gateway, setGateway] = useState('');
-    const [dnsServers, setDnsServers] = useState('8.8.8.8,8.8.4.4');
+    const [dnsServers, setDnsServers] = useState('');
     const [leaseTime, setLeaseTime] = useState(86400);
     const [domain, setDomain] = useState('');
 
@@ -129,7 +129,7 @@ export const DHCP = () => {
             setRangeEnd('');
             setSubnetMask('255.255.255.0');
             setGateway('');
-            setDnsServers('8.8.8.8,8.8.4.4');
+            setDnsServers('');
             setLeaseTime(86400);
             setDomain('');
         }
@@ -490,7 +490,7 @@ export const DHCP = () => {
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">DNS Servers</label>
-                                    <input type="text" value={dnsServers} onChange={e => setDnsServers(e.target.value)} placeholder="8.8.8.8,8.8.4.4" className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" />
+                                    <input type="text" value={dnsServers} onChange={e => setDnsServers(e.target.value)} placeholder="Leave empty to use gateway (recommended)" className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all" />
                                 </div>
                                 <div className="col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Domain (optional)</label>

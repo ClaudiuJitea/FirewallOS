@@ -247,6 +247,33 @@ function buildNatRules(natRules: any[], interfaceMap: Record<string, string>): s
 }
 
 /**
+ * Force LAN clients to use local dnsmasq by redirecting all DNS queries
+ * (UDP/TCP 53) received on active non-WAN interfaces to local port 53.
+ */
+function buildDnsRedirectRules(interfaces: any[], interfaceMap: Record<string, string>): string[] {
+    const commands: string[] = [];
+    const seen = new Set<string>();
+
+    for (const iface of interfaces) {
+        const logical = String(iface?.name || '').trim().toUpperCase();
+        const status = Number(iface?.status ?? 1);
+        if (!logical || status !== 1) continue;
+        if (logical === 'WAN') continue;
+
+        const resolvedIface = interfaceMap[logical] || interfaceMap[iface?.name] || iface?.physical_interface || iface?.name;
+        const runtimeIface = String(resolvedIface || '').trim();
+        if (!runtimeIface || runtimeIface.toUpperCase() === 'ANY') continue;
+        if (seen.has(runtimeIface)) continue;
+        seen.add(runtimeIface);
+
+        commands.push(`add rule ${TABLE_FAMILY} ${TABLE_NAME} prerouting iifname "${runtimeIface}" udp dport 53 redirect to :53 comment "force-dns-${runtimeIface}-udp"`);
+        commands.push(`add rule ${TABLE_FAMILY} ${TABLE_NAME} prerouting iifname "${runtimeIface}" tcp dport 53 redirect to :53 comment "force-dns-${runtimeIface}-tcp"`);
+    }
+
+    return commands;
+}
+
+/**
  * Apply all rules from the database to the OS via nftables.
  * This flushes the existing chains and rebuilds them.
  */
@@ -257,6 +284,7 @@ export async function applyAllRules(): Promise<{ success: boolean; error?: strin
         // Fetch enabled rules from DB
         const rules = await allQuery('SELECT * FROM rules WHERE status = 1 ORDER BY priority ASC');
         const natRules = await allQuery('SELECT * FROM nat_rules WHERE status = 1 ORDER BY priority ASC');
+        const interfaces = await allQuery('SELECT * FROM interfaces WHERE status = 1');
         const interfaceMap = await getInterfaceNameMap();
 
         // Flush all chains (remove existing rules, keep chain definitions)
@@ -273,12 +301,17 @@ export async function applyAllRules(): Promise<{ success: boolean; error?: strin
         }
 
         // Build and apply NAT rules
+        const dnsRedirectCommands = buildDnsRedirectRules(interfaces, interfaceMap);
+        for (const cmd of dnsRedirectCommands) {
+            execNft(cmd);
+        }
+
         const natCommands = buildNatRules(natRules, interfaceMap);
         for (const cmd of natCommands) {
             execNft(cmd);
         }
 
-        console.log(`[nftables] Applied ${rules.length} filter rules and ${natRules.length} NAT rules.`);
+        console.log(`[nftables] Applied ${rules.length} filter rules, ${dnsRedirectCommands.length} DNS redirect rules and ${natRules.length} NAT rules.`);
         return { success: true };
     } catch (err: any) {
         console.error('[nftables] Failed to apply rules:', err.message);
